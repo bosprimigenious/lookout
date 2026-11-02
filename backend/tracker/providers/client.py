@@ -89,6 +89,9 @@ class IO:
             delay = self.next_request.get(host, 0) - time.monotonic()
             if delay > 0:
                 time.sleep(delay)
+                # Another worker may have received Retry-After while we waited.
+                if self.cooldowns.get(host, 0) > time.monotonic():
+                    raise ValueError('provider requested a cooldown')
             if interval:
                 self.next_request[host] = time.monotonic() + interval
 

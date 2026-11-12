@@ -124,7 +124,9 @@ def test_v2_port_catalog_checks_and_facets_share_the_same_observation(config, sn
         generation = collected['generation']
         assert monitor.collect(config, 'unused', db, io=IO(client=client))['generation'] == generation
     api = ProjectedClient(create_app(db))
-    listing = api.get('/api/v2/packages?monitor=yanked&section=coverage').json()
+    response = api.get('/api/v2/packages?monitor=yanked&section=coverage')
+    assert response.status_code == 200
+    listing = response.json()
     assert {'id': 'yanked', 'title': 'Yanked', 'kind': 'evidence'} in listing['monitors']
     assert listing['total'] == 5  # Focusing is not silently excluding unconfigured packages.
     assert listing['check_statuses'] == {'not_configured': 4, 'ok': 1}
@@ -138,13 +140,33 @@ def test_v2_port_catalog_checks_and_facets_share_the_same_observation(config, sn
                      'evidence_url': 'https://pypi.org/pypi/upstream-fixture/3.9.0/json'}],
     }
     assert result['check']['status'] == 'ok'
-    selected = api.get(query_url('/api/v2/packages', {'check:yanked': 'not_configured'}, monitor='yanked', section='coverage')).json()
+    response = api.get(query_url('/api/v2/packages', {'check:yanked': 'not_configured'}, monitor='yanked', section='coverage'))
+    assert response.status_code == 200
+    selected = response.json()
     assert selected['total'] == 4 and {k: v for k, v in selected['maintenance_labels'].items() if v} == {'Outdated': 1, 'Untracked': 2}
-    assert selected['check_statuses'] == {'not_configured': 4, 'ok': 0}
-    one = api.get(query_url('/api/v2/packages', {'maintenance': 'Yanked'}, monitor='yanked')).json()
+    assert {row['name'] for row in selected['items']} == {'foo3', 'foo4', 'unknown', 'untracked'}
+    assert selected['check_statuses'] == listing['check_statuses']
+    for status, count in selected['check_statuses'].items():
+        response = api.get(query_url('/api/v2/packages', {'check:yanked': status}, monitor='yanked', section='coverage'))
+        assert response.status_code == 200
+        alternative = response.json()
+        assert alternative['total'] == count
+        assert {row['name'] for row in alternative['items']} == {
+            row['name'] for row in listing['items'] if row['monitors']['yanked']['check']['status'] == status}
+    response = api.get(query_url('/api/v2/packages', {'maintenance': 'Yanked'}, monitor='yanked'))
+    assert response.status_code == 200
+    one = response.json()
     assert one['total'] == one['counts']['all'] == 1
     assert one['check_statuses'] == {'not_configured': 0, 'ok': 1}
-    detail = api.get('/api/v2/packages/binutils').json()['monitors']['yanked']
+    response = api.get(query_url('/api/v2/packages', {
+        'check:yanked': 'not_configured', 'maintenance': 'Yanked'}, monitor='yanked', section='coverage', q='bin'))
+    assert response.status_code == 200
+    narrowed = response.json()
+    assert narrowed['total'] == 0 and narrowed['items'] == []
+    assert narrowed['check_statuses'] == one['check_statuses']
+    response = api.get('/api/v2/packages/binutils')
+    assert response.status_code == 200
+    detail = response.json()['monitors']['yanked']
     assert detail['data']['findings'][0]['facts'][0]['value'] is True
     assert detail['check'] == result['check']
     assert api.get('/api/v2/packages?monitor=not-registered').status_code == 422

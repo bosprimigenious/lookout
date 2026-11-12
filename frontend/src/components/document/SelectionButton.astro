@@ -1,0 +1,23 @@
+---
+import {safeHref, type Navigation} from '../../lib/document';
+import {logo} from '../../lib/logos';
+interface Props {choice: Navigation['choices'][number]; group: string}
+const {choice, group} = Astro.props;
+const href = safeHref(choice.href);
+const url = new URL(href || '/', Astro.url);
+const image = logo(choice.icon);
+const label = `${group}: ${choice.label}${choice.count == null ? '' : ` (${choice.count})`}`;
+const id = `select-${encodeURIComponent(group)}-${encodeURIComponent(choice.label)}`;
+---
+<form method="get" action={url.pathname} class="selection-form">
+  {[...url.searchParams].map(([name, value]) => <input type="hidden" name={name} value={value}/>)}
+  <button type="submit" aria-pressed={choice.selected} aria-label={label} id={id}
+    data-appearance={choice.appearance ? encodeURIComponent(choice.appearance) : undefined}
+    disabled={!href}>
+    <span class="choice-label">
+      {image && <img src={image.src} width="18" height="18" alt="" class:list={['brand-icon', {monochrome: image.monochrome}]}/>}
+      <span>{image?.trademark && <sup aria-hidden="true">{image.trademark}</sup>}{choice.label}</span>
+    </span>
+    {choice.count != null && <b>{choice.count}</b>}
+  </button>
+</form>

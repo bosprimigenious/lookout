@@ -1,14 +1,12 @@
-"""Concise fixture queries, serialized through the public ordered parameter contract."""
+"""Fixture queries serialized through the public facet URL contract."""
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
-from tracker.readmodel.query import Condition, FilterQuery
+from tracker.readmodel.query import FilterQuery
 
 
 def conjunction(dimensions):
-    terms = tuple(Condition(dimension=dimension, value=value)
-                  for dimension, values in dimensions.items()
-                  for value in ([values] if isinstance(values, str) else values) if value)
-    return FilterQuery(tail=terms) if terms else FilterQuery()
+    return FilterQuery(selections={dimension: tuple([values] if isinstance(values, str) else values)
+        for dimension, values in dimensions.items() if values})
 
 
 def query_url(path, dimensions=None, **parameters):
@@ -19,7 +17,7 @@ def query_url(path, dimensions=None, **parameters):
 def terms_in(href):
     """Flatten only for assertions about membership, never to evaluate logic."""
     query = filter_in(href)
-    return [(term.dimension, term.value) for term in (*query.tail, *(item for group in query.groups for item in group.conditions))]
+    return [term.identity for term in query.conditions]
 
 
 def filter_in(href):

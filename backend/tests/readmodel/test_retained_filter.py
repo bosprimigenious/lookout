@@ -146,18 +146,38 @@ def test_raw_api_is_typed_and_composable(retained_client):
 
 def test_retained_count_follows_search_and_selected_zero_remains_visible(retained_client):
     document = retained_client.get('/api/ui/packages?monitor=security&q=foo').json()
-    choices = [choice for navigation in document['controls']['navigation'] for choice in navigation['choices']]
-    retained = next(choice for choice in choices if choice['label'] == 'Stale')
+    choices = [choice for navigation in document['controls']['choice_rows'] for choice in navigation['choices']]
+    retained = next(choice for choice in choices if choice['label'] == 'Retained')
     assert retained['count'] == 1
     destination = retained_client.get(retained['href'].replace('/?', '/api/ui/packages?')).json()
     assert [row['key'] for row in destination['table']['rows']] == ['foo3']
     empty = retained_client.get(query_url('/api/ui/packages', {'retained:security': 'yes'}, monitor='security', q='absent')).json()
-    choices = [choice for navigation in empty['controls']['navigation'] for choice in navigation['choices']]
-    retained = next(choice for choice in choices if choice['label'] == 'Stale')
+    choices = [choice for navigation in empty['controls']['choice_rows'] for choice in navigation['choices']]
+    retained = next(choice for choice in choices if choice['label'] == 'Retained')
     assert retained['count'] == 0 and retained['selected'] and empty['total'] == 0
     inactive = retained_client.get('/api/ui/packages?monitor=security&q=foo4').json()
-    assert not any(choice['label'] == 'Stale'
-                   for navigation in inactive['controls']['navigation'] for choice in navigation['choices'])
+    assert not any(choice['label'] == 'Retained'
+                   for navigation in inactive['controls']['choice_rows'] for choice in navigation['choices'])
+
+
+def test_stale_checks_and_retained_observations_have_distinct_scopes(retained_client):
+    document = retained_client.get('/api/ui/packages?monitor=security&section=coverage').json()
+    groups = {group['label']: group for group in document['controls']['choice_rows']}
+    stale = next(choice for choice in groups['Checks']['choices'] if choice['label'] == 'Stale')
+    retained, = groups['Observations']['choices']
+    assert retained['label'] == 'Retained'
+    assert stale['count'] == 1 and retained['count'] == 2
+    stale_page = retained_client.get('/api/ui/packages?' + stale['href'].split('?', 1)[1]).json()
+    retained_page = retained_client.get('/api/ui/packages?' + retained['href'].split('?', 1)[1]).json()
+    assert [row['key'] for row in stale_page['table']['rows']] == ['binutils']
+    assert [row['key'] for row in retained_page['table']['rows']] == ['binutils', 'foo3']
+    both = retained_client.get(query_url('/api/ui/packages', {
+        'check:security': 'expired', 'retained:security': 'yes'},
+        monitor='security', section='coverage')).json()
+    selected = [(group['label'], choice['label']) for group in both['controls']['choice_rows']
+                for choice in group['choices'] if choice['selected']]
+    assert selected == [('Checks', 'Stale'), ('Observations', 'Retained')]
+    assert [row['key'] for row in both['table']['rows']] == ['binutils']
 
 
 def test_row_markers_link_to_the_same_visible_retained_set(retained_client):

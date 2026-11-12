@@ -4,7 +4,7 @@ from tracker.monitors.model import check_failed
 from tracker.presentation.activity import open_links
 from tracker.presentation.build import build_note
 from tracker.presentation.evidence import evidence_labels
-from tracker.presentation.labels import appearance, caption, palettes, priority
+from tracker.presentation.labels import appearance, caption, palettes, priority, tag_palette
 from tracker.presentation.model import (
     Choice,
     Column,
@@ -30,6 +30,7 @@ from tracker.presentation.status import data_status
 from tracker.presentation.values import (
     buildsystem,
     cell,
+    check_diagnostics,
     check_value,
     field,
     module,
@@ -57,11 +58,7 @@ def identity_cell(pkg, links, *, labels=True):
     identity = [text(pkg['name'], href=pkg['detail_url'], kind='code')]
     signals = []
     if labels:
-        version = module(pkg, 'version')
-        if version and Issue.OUTDATED in version['dimensions'].get('maintenance', []):
-            signals.append(text(Issue.OUTDATED, kind='tag', appearance=appearance(Issue.OUTDATED),
-                                href=links.condition('maintenance', Issue.OUTDATED)))
-        signals.extend(check_failed_label(pkg, links, exclude_kind='version'))
+        signals.extend(check_failed_label(pkg, exclude_kind='version'))
         for result in pkg['monitors'].values():
             if result['data']['kind'] in ('evidence', 'requires'):
                 signals.extend(evidence_labels(result, links, counts=True))
@@ -75,7 +72,7 @@ def identity_cell(pkg, links, *, labels=True):
     return cell(identity)
 
 
-def check_failed_label(pkg, links=None, *, exclude_kind=None):
+def check_failed_label(pkg, *, exclude_kind=None):
     errors = [result for result in pkg['monitors'].values()
               if result['data']['kind'] != exclude_kind and check_failed(result['check'])]
     if not errors:
@@ -83,7 +80,7 @@ def check_failed_label(pkg, links=None, *, exclude_kind=None):
     anchor = 'check-' + errors[0]['id'] if len(errors) == 1 else 'checks'
     return [text(Issue.CHECK_FAILED, kind='tag', appearance=appearance(Issue.CHECK_FAILED),
                  title=', '.join(caption(result['title']) for result in errors),
-                 href=links.condition('maintenance', Issue.CHECK_FAILED) if links else pkg['detail_url'] + '#' + anchor)]
+                 href=pkg['detail_url'] + '#' + anchor)]
 
 
 def listing(payload, query):
@@ -118,9 +115,8 @@ def listing(payload, query):
 
 def _coverage_table(payload, focus, links, title):
     filtered = any(c.dimension == 'check:' + focus['id']
-                   for c in links.editor.query.conditions)
-    reasons = {pkg['name']: pkg['monitors'][focus['id']]['check'].get('error') or
-               pkg['monitors'][focus['id']]['check'].get('note')
+                   for c in links.filters.conditions)
+    reasons = {pkg['name']: check_diagnostics(pkg['monitors'][focus['id']]['check'])
                for pkg in payload['items']} if filtered else {}
     show_reason = any(reasons.values())
     columns = [Column(title='Package', role='identity')]
@@ -137,7 +133,7 @@ def _coverage_table(payload, focus, links, title):
             source = module(pkg, 'source')
             cells.append(cell([text(source['data'].get('version') if source else None, kind='code')]))
             if show_reason:
-                cells.append(cell([text(reasons[pkg['name']], tone='notice')]))
+                cells.append(cell(*([text(message, tone='notice')] for message in reasons[pkg['name']])))
         else:
             check = pkg['monitors'][focus['id']]['check']
             cells += [cell([check_value(check)]), cell([stamp(check.get('checked_at'))])]
@@ -224,8 +220,7 @@ def detail(pkg, collection=None):
     for result in pkg['monitors'].values():
         check = result['check']
         status_lines = [[check_value(check)]]
-        failures = check.get('failures') or [check.get('error')]
-        diagnostics = dict.fromkeys([*failures, check.get('note')])
+        diagnostics = check_diagnostics(check)
         status_lines.extend([text(message, tone='notice' if check_failed(check) else 'muted')]
                             for message in diagnostics if message)
         timestamps = [[stamp(check.get('checked_at'))]]
@@ -245,5 +240,5 @@ def detail(pkg, collection=None):
 
 
 def theme(presentation):
-    return {'appearances': {**palettes(), **{'buildsystem:' + key: {k: value[k] for k in ('background', 'foreground')}
-            for key, value in presentation.get('buildsystems', {}).items()}}}
+    return {'appearances': {**palettes(), **{'buildsystem:' + key: colors
+            for key, value in presentation.get('buildsystems', {}).items() if (colors := tag_palette(value['background'])) is not None}}}

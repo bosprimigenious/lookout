@@ -59,6 +59,52 @@ def test_cached_inputs_keep_their_observation_time(tmp_path, monkeypatch):
         assert third.observed_at > stamp and len(requests) == 2
 
 
+@pytest.mark.parametrize('status', [429, 503])
+def test_retry_after_arriving_during_pacing_blocks_waiting_request(monkeypatch, status):
+    clock = [100.0]
+    first_started, pacing_started, release = (threading.Event() for _ in range(3))
+    requests = []
+
+    def handle(request):
+        requests.append(str(request.url))
+        if request.url.path == '/limited':
+            first_started.set()
+            assert pacing_started.wait(5)
+            return httpx.Response(status, headers={'Retry-After': '3600'})
+        return httpx.Response(200, json={'ok': True})
+
+    def paced_sleep(delay):
+        pacing_started.set()
+        assert release.wait(5)
+        clock[0] += delay
+
+    monkeypatch.setattr(monitor_io.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(monitor_io.time, 'sleep', paced_sleep)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        owner = monitor_io.IO(client=client)
+        io = owner.for_hosts({'example.org', 'other.invalid'})
+        assert io.json('GET', 'https://example.org/cached') == {'ok': True}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(io.json, 'GET', 'https://example.org/limited', min_interval=1)
+            try:
+                assert first_started.wait(5)
+                second = pool.submit(io.json, 'GET', 'https://example.org/waiting', min_interval=1)
+                with pytest.raises(httpx.HTTPStatusError):
+                    first.result(timeout=5)
+            finally:
+                release.set()
+            with pytest.raises(ValueError, match='cooldown'):
+                second.result(timeout=5)
+        assert io.json('GET', 'https://example.org/cached') == {'ok': True}
+        assert io.json('GET', 'https://other.invalid/fact') == {'ok': True}
+        assert requests == [
+            'https://example.org/cached', 'https://example.org/limited',
+            'https://other.invalid/fact',
+        ]
+        clock[0] = 3700.0
+        assert io.json('GET', 'https://example.org/after-cooldown') == {'ok': True}
+
+
 class Stream(httpx.SyncByteStream):
     def __init__(self, parts, clock=None):
         self.parts = parts

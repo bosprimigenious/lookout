@@ -6,7 +6,6 @@ export type Table = Schemas['Table'];
 export type Field = Schemas['Field'];
 export type Section = Schemas['Section'];
 export type Navigation = Schemas['Navigation'];
-export type FilterEditor = Schemas['FilterEditor'];
 export type Controls = Schemas['Controls'];
 export type ListingDocument = Schemas['ListingDocument'];
 export type DetailDocument = Schemas['DetailDocument'];

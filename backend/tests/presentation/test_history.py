@@ -57,8 +57,12 @@ def test_activity_counters_link_to_package_history_with_accessible_names():
 
 
 def test_global_alerts_exclude_activity_totals_but_keep_external_monitor_labels():
-    choices = maintenance_navigation({'maintenance_labels': {'PR': 12, 'Issue': 8, 'NewSignal': 3}}, Links()).choices
-    counts = {choice.label: choice.count for choice in choices}
+    from tracker.readmodel.packages import PackageList
+    rows = [{'name': 'fixture', 'monitors': {
+        'github': {'data': {'kind':'activity'}, 'dimensions': {'maintenance': ['PR', 'Issue']}},
+        'new': {'data': {'kind':'evidence'}, 'check': {'status':'ok'}, 'dimensions': {'maintenance':['NewSignal']}}}}]
+    payload = PackageList(rows, []).select()
+    navigation = maintenance_navigation(payload, Links())
+    counts = {choice.label: choice.count for group in navigation for choice in group.choices}
     assert 'PR' not in counts and 'Issue' not in counts
-    assert counts['NewSignal'] == 3
-    assert counts['Outdated'] == 0
+    assert counts == {'NewSignal': 1}

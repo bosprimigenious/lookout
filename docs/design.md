@@ -99,30 +99,24 @@ full-list and batch limits bound response work. Request and response models gene
 `readmodel/query.py` evaluates indexed package sets within the search scope.
 Each package counts once. Pagination follows selection.
 
-| Mode | Combination |
-|---|---|
-| Ordinary | AND between predicates. OR between alternatives for one build target or BuildSystem. |
-| Advanced | Evaluate conditions left to right from scoped ALL. AND intersects, OR unions, NOT subtracts. |
+An empty query returns all packages. Each selected value is a positive predicate:
+values within a facet form a union; different facets intersect. Removing the last
+value removes that facet. Counts apply the search text and every other facet;
+prefix/suffix intersections compute these scopes once per request.
 
-A group marker seals pending conditions since the preceding marker. Groups cannot nest.
-Each group evaluates from scoped ALL, then combines with the outer result using its own operator.
-Grouping preserves condition operators. The group operator is independent of the first condition.
-Repeated conditions collapse within a sequence, not across groups.
+Maintenance filters select observed findings. Collection checks are independent:
+a failed refresh can coexist with retained findings, and an empty finding list
+does not prove a successful check. Data status links to each monitor's coverage,
+including failed, unsupported, pending and stale observations.
 
-`presentation/query_editor.py` changes the query, not its evaluation rules.
-Selection and candidate counts use the same indexed sets.
-See the site's `/api` page for URL syntax and candidate-count semantics.
-Prefix/suffix intersections compute alternative scopes once per request.
+Selected filters remain visible and removable even when their counts reach zero.
+Menu selections also appear above the table. The website's `/api` page defines the
+URL format.
 
-`MAX_QUERY_NODES` limits queries to 128 conditions and group nodes, including implicit union groups.
-Repeated conditions count before deduplication. There is no per-group limit.
-Dimension/value identifiers cannot exceed 100 characters.
-Invalid operators, unknown dimensions, empty group operations and excess nodes return 422.
-Responses expose the limit. At the limit, users can remove nodes but cannot add them.
-
+`MAX_QUERY_NODES` limits a request to 128 selections, counting raw repeats.
+Dimension/value identifiers cannot exceed 100 characters. Invalid parameters,
+unknown dimensions and excess selections return 422.
 Run `python scripts/benchmark-filters.py` before raising the limit.
-It measures parsing, selection and counting on synthetic packages.
-Account for deployment CPU, package count and reverse-proxy URL limits.
 
 ### Display contracts
 
@@ -131,7 +125,7 @@ Issue styles come from `presentation/labels.toml`. BuildSystem styles come from 
 
 | Classification | Meaning |
 |---|---|
-| Untracked | No configured upstream version track, excluding packages marked not applicable |
+| Untracked | No upstream version rule |
 | CheckFailed | At least one failed collection subcheck, counted once per package |
 
 Checks retain reasons for partial results, watch-track failures and build-history failures.

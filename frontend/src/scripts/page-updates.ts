@@ -52,6 +52,7 @@ function assets(page: Document) {
 function preserveReadingState() {
   const x = scrollX, y = scrollY;
   const expanded = [...document.querySelectorAll('details[open][id]')].map(element => element.id);
+  const popovers = [...document.querySelectorAll('[popover]:popover-open')].map(element => element.id);
   const horizontal = new Map([...document.querySelectorAll('.table-wrap')]
     .map(element => [element.getAttribute('aria-label'), element.scrollLeft]));
   const input = document.querySelector<HTMLInputElement>('#search');
@@ -64,6 +65,7 @@ function preserveReadingState() {
       const element = document.getElementById(id);
       if (element instanceof HTMLDetailsElement) element.open = true;
     }
+    for (const id of popovers) document.getElementById(id)?.showPopover();
     for (const element of document.querySelectorAll('.table-wrap')) {
       element.scrollLeft = horizontal.get(element.getAttribute('aria-label')) || 0;
     }
@@ -123,6 +125,8 @@ document.addEventListener('htmx:beforeSwap', event => {
       return;
     }
     restore.set(result.xhr, preserveReadingState());
+  } else if (result.requestConfig.elt.matches('.selection-form')) {
+    restore.set(result.xhr, preserveReadingState());
   }
   const theme = page.documentElement.getAttribute('data-theme');
   if (theme) document.documentElement.setAttribute('data-theme', theme);
@@ -132,7 +136,7 @@ document.addEventListener('htmx:beforeSwap', event => {
 document.addEventListener('htmx:afterSwap', event => {
   const result = (event as CustomEvent<HtmxResponseInfo>).detail;
   if (historyPage(result.requestConfig)) return;
-  if (background(result.requestConfig)) restore.get(result.xhr)?.();
+  if (restore.has(result.xhr)) restore.get(result.xhr)?.();
   else {
     document.getElementById('main')?.focus({preventScroll: true});
     window.scrollTo(0, 0);

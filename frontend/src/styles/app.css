@@ -104,10 +104,6 @@
   font-weight: 600;
   box-shadow: inset 2px 0 var(--focus);
 }
-.document-nav a[aria-current][data-appearance] {
-  background: color-mix(in srgb, var(--appearance-background, var(--head)) 12%, var(--bg));
-  box-shadow: inset 2px 0 var(--appearance-background, var(--fg));
-}
 .document-nav b {
   font-size: 12px;
   font-weight: 400;
@@ -146,8 +142,8 @@
 }
 .choice-rows {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   margin: 0 0 8px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
@@ -171,22 +167,8 @@
   color: var(--muted);
   font-weight: 400;
 }
-.choice-row .document-nav a {
-  font-size: 13px;
-  gap: 5px;
-  white-space: nowrap;
-  padding: 5px 7px;
-}
-.choice-row:first-child:not(:only-child) {
-  margin-bottom: 8px;
-}
 .choice-row .document-nav b {
   font-size: 12px;
-}
-.choice-row .document-nav a[data-appearance] {
-  color: light-dark(var(--appearance-background, var(--fg)),
-    color-mix(in srgb, var(--appearance-background, var(--fg)) 35%, var(--fg)));
-  font-weight: 600;
 }
 .choice-row .document-nav {
   flex: 1 1 280px;
@@ -198,6 +180,12 @@
   border: 0;
   background: transparent;
   white-space: nowrap;
+}
+.navigation-menu-trigger.has-selection {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
 }
 .navigation-menu-trigger:hover {
   color: var(--fg);
@@ -392,10 +380,16 @@ a.value-tag {
   color: light-dark(var(--appearance-background, var(--fg)),
     color-mix(in srgb, var(--appearance-background, var(--fg)) 35%, var(--fg)));
 }
-.value-tag[data-variant="solid"] {
-  background: var(--appearance-background, var(--head));
-  color: var(--appearance-foreground, var(--fg));
-  border-color: transparent;
+.value-tag {
+  background: light-dark(#fff, var(--appearance-background, #626b75));
+  color: light-dark(var(--appearance-background, #626b75), #fff);
+  border-color: var(--appearance-background, #626b75);
+}
+.value-tag[data-size="small"] {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0 4px;
+  min-height: 0;
 }
 .column-identity a.value-code {
   font-weight: 500;
@@ -660,9 +654,6 @@ a.value-tag {
 .data-table .row-note td[aria-hidden] {
   padding: 0;
 }
-.document-nav a[aria-current][data-appearance] {
-  color: light-dark(var(--appearance-background, var(--fg)), var(--fg));
-}
 
 .choice-label {
   min-width: 0;
@@ -694,29 +685,7 @@ a.value-tag {
   text-decoration: underline;
 }
 
-.logic-switch { display: inline-flex; align-items: stretch; gap: 1px; font-size: 12px; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
-.logic-switch a { padding: 4px 7px; color: var(--muted); text-decoration: none; }
-.logic-switch a[aria-current] { color: var(--blue); font-weight: 700; background: color-mix(in srgb, var(--blue) 9%, var(--bg)); }
 .filter-clear { font-size: 12px; color: var(--muted); }
-.group-add { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--fg); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
-.group-add[href]:hover, .group-add[href]:focus-visible { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 6%, var(--bg)); }
-.query-expression { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-width: 0; }
-.query-segment { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
-.query-group { border: 1px solid var(--group-color); border-radius: 4px; padding: 3px 6px; background: color-mix(in srgb, var(--group-color) 7%, var(--bg)); }
-.query-group[data-palette="0"] { --group-color: #526db2; }
-.query-group[data-palette="1"] { --group-color: #9171a8; }
-.query-group[data-palette="2"] { --group-color: #38847b; }
-.query-group[data-palette="3"] { --group-color: #97754b; }
-.query-segment a { color: var(--fg); font-size: 13px; overflow-wrap: anywhere; }
-.condition-operator { color: var(--muted); font: 11px ui-monospace, monospace; }
-.group-clear { padding-inline: 4px; color: var(--muted); }
-a[aria-disabled] { opacity: .55; cursor: not-allowed; }
-
-.query-operand { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
-.query-group a { text-decoration: none; }
-.query-group a:hover { text-decoration: underline; }
-.query-group .group-clear { border-inline-start: 1px solid color-mix(in srgb, var(--group-color) 35%, transparent); padding-inline-start: 7px; margin-inline-start: 3px; }
-.term-remove { color: var(--muted); }
 
 .document-icon {
   display: inline-flex;
@@ -727,15 +696,6 @@ a[aria-disabled] { opacity: .55; cursor: not-allowed; }
   width: 1em;
   height: 1em;
   fill: currentColor;
-}
-
-.advanced-search {
-  color: var(--muted);
-  white-space: nowrap;
-}
-.advanced-search[aria-current] {
-  color: var(--fg);
-  font-weight: 650;
 }
 
 .entry-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem 1rem; }
@@ -796,4 +756,37 @@ a[aria-disabled] { opacity: .55; cursor: not-allowed; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   gap: 8px 24px;
+}
+
+.selection-nav { gap: 3px; }
+.selection-form { display: contents; }
+.selection-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 7px;
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  border-radius: 3px;
+}
+.selection-nav button[data-appearance] {
+  color: light-dark(var(--appearance-background, var(--fg)),
+    color-mix(in srgb, var(--appearance-background, var(--fg)) 35%, var(--fg)));
+}
+.selection-nav button[aria-pressed="true"] {
+  background: var(--head);
+  border-color: var(--control);
+  border-bottom: 2px solid currentColor;
+  padding-bottom: 2px;
+  font-weight: 600;
+}
+.selection-nav button:enabled:hover { background: var(--hover); border-color: var(--control); }
+.selection-nav button b { font-weight: inherit; font-variant-numeric: tabular-nums; }
+.navigation-menu .selection-nav { flex-direction: column; }
+@media (forced-colors: active) {
+  .selection-nav button[aria-pressed="true"] { border: 2px solid Highlight; }
 }

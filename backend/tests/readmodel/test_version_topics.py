@@ -1,19 +1,20 @@
 """Version is a composed topic; collectors keep their own evidence and cadence."""
-from tests.helpers.query import conjunction, query_url
 from copy import deepcopy
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
-from tests.helpers.listing import facet_destination
+from tests.helpers.listing import follow
+from tests.helpers.query import conjunction, query_url
 from tracker import state
 from tracker.api import create_app
 from tracker.monitors import model as monitor_model
 from tracker.monitors.requires import model as requirements
 from tracker.monitors.version import compare as version_status
-from tracker.readmodel import monitors as monitor_views, snapshot as view
+from tracker.readmodel import monitors as monitor_views
+from tracker.readmodel import snapshot as view
 from tracker.readmodel.packages import PackageList
 
 
@@ -125,7 +126,7 @@ def test_composition_keeps_original_evidence_and_has_no_network_work(version):
 
 def test_projection_rejects_changed_subject_and_target_before_topic_join(snapshot, monkeypatch):
     monkeypatch.setattr(state, 'compare', lambda *args: 'outdated')
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     subject = version_status.evaluate(snapshot, 'binutils', now).subject
     snapshot['monitor_catalog'] = {'license': {'title': 'LicenseDiff'}}
     snapshot['monitors'] = {'binutils': {'license': dict(
@@ -149,19 +150,22 @@ def test_signal_counts_are_disjunctive_package_counts_and_filter_by_stable_id():
     filters = dict(page=1, per_page=100)
     result = index.select(filters=conjunction({'buildsystem': 'cmake', 'version_signal': 'security'}), **filters)
     assert result['total'] == 1
-    assert result['version_signals'] == {'license': 1, 'security': 1, 'yanked': 0, 'requires': 0}
+    assert result['version_signals'] == {'license': 2, 'security': 1, 'yanked': 0, 'requires': 0}
     for signal, count in result['version_signals'].items():
-        assert index.select(filters=conjunction({'buildsystem': 'cmake', 'version_signal': ['security', signal]}), **filters)['total'] == count
+        assert index.select(filters=conjunction({'buildsystem': 'cmake', 'version_signal': signal}), **filters)['total'] == count
 
 
 def test_home_exposes_dependency_changes_as_an_independent_filter(scoped_client):
     page = scoped_client.get('/api/ui/packages').json()
-    choice = next(c for c in page['controls']['choice_rows'][0]['choices'] if c['label'] == 'DepChanges')
-    selected = facet_destination(scoped_client, page, choice)
-    assert any(c['label'] == 'DepChanges' for c in selected['controls']['editor']['groups'][0]['conditions'])
-    from tracker.api import ListingQuery
-    hidden = [(p['name'], p['value']) for p in selected['controls']['hidden']]
-    assert ListingQuery.from_parameters(hidden).filters.nodes == 0
+    choice = next(choice for group in page['controls']['choice_rows']
+                  for choice in group['choices'] if choice['label'] == 'DepChanges')
+    assert not choice['selected']
+    selected = follow(scoped_client, choice['href'])
+    choice = next(choice for group in selected['controls']['choice_rows']
+                  for choice in group['choices'] if choice['label'] == 'DepChanges')
+    assert choice['selected']
+    assert [row['key'] for row in selected['table']['rows']] == ['untracked']
+    assert follow(scoped_client, choice['href'])['total'] == page['total']
 
 
 def test_v2_filter_and_schema_expose_the_join_without_repeating_evidence(snapshot, tmp_path, monkeypatch):
@@ -188,7 +192,7 @@ def test_v2_filter_and_schema_expose_the_join_without_repeating_evidence(snapsho
 
 def test_current_security_reaches_version_even_when_latest_and_disappears_on_subject_change(snapshot, monkeypatch):
     monkeypatch.setattr(state, 'compare', lambda *args: 'current')
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     subject = version_status.evaluate(snapshot, 'binutils', now).subject
     snapshot['monitor_catalog'] = {'security': {'title': 'Advisory'}}
     snapshot['monitors'] = {'binutils': {'security': dict(
@@ -212,7 +216,7 @@ def test_dependency_annotations_use_range_semantics(version, target, count):
     declaration = dict(dependency='python', name='Python', kind='runtime', scheme='pep440',
         current=dict(expression='>=3.8,>=3.7', source='PyPI', url='https://example.org/current'),
         target=dict(expression=target, source='PyPI', url='https://example.org/target'))
-    item = requirements.assess(declaration, {}, datetime.now(timezone.utc))
+    item = requirements.assess(declaration, {}, datetime.now(UTC))
     facts = [dict(**finding('requires'), requirement=declaration)]
     projected = results()
     projected['requires'] = dict(data=dict(kind='requires', requirements=[item], findings=facts))
@@ -220,3 +224,21 @@ def test_dependency_annotations_use_range_semantics(version, target, count):
     annotations = projected['version']['data']['annotations']
     assert sum(entry['count'] for entry in annotations if entry['label'] == 'DepChanges') == count
     assert projected['requires']['data']['findings'] == facts
+
+
+@pytest.mark.parametrize('target,stale,changed', [('>=3.8', False, False),
+                                               ('>=3.9', False, True),
+                                               ('>=3.9', True, False)])
+def test_dependency_change_filter_uses_projected_constraint_comparison(version, target, stale, changed):
+    facts = [dict(**finding('requires', scope=scope, stale=stale),
+                  requirement=requirements.Requirement('python', 'Python', 'runtime', 'pep440',
+                      expression, expression, 'Fixture', 'https://example.org/').fact())
+             for scope, expression in [('current', '>=3.8'), ('upgrade', target)]]
+    context = monitor_views.Context({}, 'widget', datetime.now(UTC), version, [],
+        {'findings': facts, 'checks': [{'monitor': 'requires', 'status': 'ok'}]})
+    result = monitor_views.requires(context)
+    assert result['data']['requirements'][0]['changed'] is changed
+    assert ('changes' in result['dimensions']['requires']) is changed
+    assert ('DepChanges' in result['dimensions']['maintenance']) is changed
+    assert 'DepMismatch' not in result['dimensions']['maintenance']
+    assert result['data']['findings'] == facts

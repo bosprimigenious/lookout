@@ -132,12 +132,23 @@ def test_untracked_filter_is_not_attention(tmp_path, snapshot):
     db = tmp_path / 'snapshot.db'
     state.commit(db, snapshot)
     client = ProjectedClient(create_app(db))
-    payload = client.get(query_url('/api/v2/packages', {'view': 'untracked'})).json()
-    assert payload['counts']['attention'] == 2
-    assert client.get('/api/v2/packages').json()['counts']['attention'] == 3
-    assert payload['counts']['untracked'] == 2
-    assert [r['name'] for r in payload['items']] == ['unknown', 'untracked']
-    detail = client.get('/api/v2/packages/binutils').json()
+    response = client.get(query_url('/api/v2/packages', {'view': 'untracked'}))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['total'] == payload['counts']['untracked'] == 2
+    assert {row['name'] for row in payload['items']} == {'unknown', 'untracked'}
+    attention = client.get(query_url('/api/v2/packages', {'view': 'attention'}))
+    assert attention.status_code == 200
+    assert {row['name'] for row in attention.json()['items']} == {'binutils', 'unknown', 'untracked'}
+    # Alternative counts omit only the selected view, not the search scope.
+    assert payload['counts']['attention'] == attention.json()['total'] == 3
+    searched = client.get(query_url('/api/v2/packages', {'view': 'untracked'}, q='bin'))
+    assert searched.status_code == 200
+    assert searched.json()['total'] == 0
+    assert searched.json()['counts']['attention'] == 1
+    response = client.get('/api/v2/packages/binutils')
+    assert response.status_code == 200
+    detail = response.json()
     assert detail['monitors']['build']['data']['source_success'] is True
     assert detail['monitors']['build']['data']['targets'][0]['last_success']['version'] == '3.9.0'
 

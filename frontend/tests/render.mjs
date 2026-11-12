@@ -1,6 +1,7 @@
 // Render the production SSR bundle against deterministic API observations.
 import assert from 'node:assert/strict';
 import './http-cache.cjs';
+import './redocly.cjs';
 import './render-cache.mjs';
 import {noteRows} from '../src/lib/document.ts';
 import {spawn, spawnSync} from 'node:child_process';
@@ -25,39 +26,9 @@ const serving = process.argv.includes('--serve');
 let delays = {};
 let revision = 0;
 
-const token = (dimension, value) => dimension === 'maintenance' ? value
-  : dimension === 'version_signal' && value === 'requires' ? 'DepChanges'
-  : dimension === 'buildsystem' ? 'buildsystem_' + (value === '_not_detected' ? 'custom' : value)
-  : dimension.startsWith('build:') ? dimension.slice(6) + '_' + value : dimension + '/' + value;
-const filtered = (conditions, parameters = {}, logic = 'and', root = 'and') => {
-  const pairs = Object.entries(parameters);
-  conditions.forEach((terms, group) => {
-    terms.forEach(([dimension, value], index) => pairs.push([token(dimension, value), (index ? logic : root).toUpperCase()]));
-    if (group < conditions.length - 1) pairs.push(['Group', root.toUpperCase()]);
-  });
-  return '/?' + new URLSearchParams(pairs);
-};
-const filterFrom = href => {
-  const parameters = new URL(href.replaceAll('&amp;', '&'), 'http://fixture').searchParams;
-  const groups = [];
-  let tail = [];
-  for (const [key, value] of parameters) {
-    if (key === 'Group') {
-      groups.push({logic: value.toLowerCase(), conditions: tail});
-      tail = [];
-    } else if (['AND', 'OR', 'NOT', ''].includes(value) && key !== 'q') {
-      for (const part of key.replaceAll(' ', '+').split('+')) {
-        const [dimension, item] = part.includes('/') ? part.split('/')
-          : part === 'DepChanges' ? ['version_signal', 'requires']
-          : part.startsWith('buildsystem_') ? ['buildsystem', part.slice(12) === 'custom' ? '_not_detected' : part.slice(12)]
-          : /^(rva23|rva20|x86_64)_/.test(part) ? ['build:' + part.slice(0, part.lastIndexOf('_')), part.slice(part.lastIndexOf('_') + 1)]
-          : ['maintenance', part];
-        tail.push({dimension, value: item, logic: value.toLowerCase() || 'and'});
-      }
-    }
-  }
-  return {groups, tail};
-};
+const filtered = (conditions, parameters = {}) => '/?' + new URLSearchParams([
+  ...Object.entries(parameters), ...conditions.flat().map(([dimension, value]) => ['select', `${dimension}=${value}`]),
+]);
 const targets = ['rva23', 'rva20', 'x86_64'].map(id => ({id, label: id, repository: id, architecture: 'riscv64'}));
 const makePackage = (name, patch = {}) => ({
   buildsystem: null, buildsystem_status: 'not_declared', maintenance: [], maintenance_findings: [], monitor_checks: [], presentation: {buildsystems: {}},
@@ -321,11 +292,11 @@ const mock = createServer((req, res) => {
     res.once('close', () => clearTimeout(timer));
   } else send();
 });
-mock.listen(serving ? 8099 : 0, serving ? '0.0.0.0' : '127.0.0.1'); await once(mock, 'listening');
+mock.listen(serving ? 8099 : 0, '127.0.0.1'); await once(mock, 'listening');
 const reserve = createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
 const port = serving ? 8080 : reserve.address().port; await new Promise(resolve => reserve.close(resolve));
 const child = spawn(process.execPath, ['server.mjs'], {env: {...process.env,
-  HOST: serving ? '0.0.0.0' : '127.0.0.1', PORT: String(port), TRACKER_API_URL: `http://127.0.0.1:${mock.address().port}`}, stdio: ['ignore', 'pipe', 'pipe']});
+  HOST: '127.0.0.1', PORT: String(port), TRACKER_API_URL: `http://127.0.0.1:${mock.address().port}`}, stdio: ['ignore', 'pipe', 'pipe']});
 let logs = ''; child.stdout.on('data', chunk => logs += chunk); child.stderr.on('data', chunk => logs += chunk);
 async function read(path, cookie) {
   const response = await fetch(`http://127.0.0.1:${port}${path}`, {headers: cookie ? {cookie} : {}});
@@ -479,8 +450,9 @@ try {
   assert.match(listing, /lang="en"/);
   const packageHeader = listing.match(/<thead>[^]*?<\/thead>/)[0];
   const packageMenuID = packageHeader.match(/popovertarget="([^"]+)"[^>]*aria-label="Filter Package"/)[1];
-  const globalNavigation = packageHeader.match(new RegExp(`<div id="${packageMenuID}"[^>]*popover="auto"[^]*?<\\/div>`))[0];
-  assert.match(globalNavigation, /<h2>BuildSystem<\/h2>/);
+  assert.ok(packageHeader.includes(`id="${packageMenuID}"`));
+  const globalNavigation = packageHeader.match(/<div[^>]*role="group" aria-label="BuildSystem"[^]*?<\/div>/)[0];
+  assert.match(packageHeader, /<h2>BuildSystem<\/h2>/);
   assert.match(globalNavigation, /aria-label="BuildSystem"/);
   assert.match(globalNavigation, />custom<\/span><\/span>\s*<b>1<\/b>/);
   assert.match(globalNavigation, />❔ custom<\/span>/);
@@ -494,12 +466,27 @@ try {
   assert.match(listing, /href="https:\/\/github.com\/fixture\/repo\/tree\/stable%2F3">stable\/3<\/a>/);
   assert.match(listing, /href="https:\/\/github.com\/fixture\/repo\/commit\/abcdef0123456789abcdef0123456789abcdef01"[^>]*>abcdef<\/a>/);
   assert.equal((listing.match(/<table\b[^]*?<\/table>/)[0].match(/<col(?:\s[^>]*)?\s*\/?>/g)||[]).length, 6);
-  assert.equal((listing.match(/<form\b/g) || []).length, 1);
-  assert.equal((listing.match(/data-group-id=/g) || []).length, 0);
-  const packageMenu = listing.match(/<nav[^>]*aria-label="Alerts"[^]*?<\/nav>/)[0];
-  assert.match(packageMenu, />Outdated<\/span>/);
-  assert.match(packageMenu, />Untracked<\/span>/);
-  assert.doesNotMatch(packageMenu, />PR<|>Issue</);
+  assert.equal((listing.match(/role="search"/g) || []).length, 1);
+  const packageMenu = listing.match(/<div class="choice-rows"[^]*?<div class="results-toolbar"/)[0];
+  const filterForms = html => [...html.matchAll(/<form[^>]*class="selection-form"[^]*?<\/form>/g)]
+    .map(match => match[0]);
+  const formURL = form => '/?' + new URLSearchParams([...form.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"/g)]
+    .map(([, name, value]) => [name, value.replaceAll('&amp;', '&')]));
+  const findingForms = filterForms(packageMenu);
+  assert.ok(findingForms.length > 0);
+  for (const form of findingForms) {
+    assert.match(form, /aria-pressed="false"/);
+    const count = Number(form.match(/<b>([0-9]+)<\/b>/)[1]);
+    assert.ok(count > 0);
+    const id = form.match(/<button[^>]*id="([^"]+)"/)[1];
+    const after = await read(formURL(form));
+    assert.equal(rowKeys(after).size, count, 'facet count matches the submitted result');
+    const selectedForm = filterForms(after).find(item => item.includes(`id="${id}"`));
+    assert.ok(selectedForm, 'selected filter remains available');
+    assert.match(selectedForm, /aria-pressed="true"/);
+    const restored = await read(formURL(selectedForm));
+    assert.deepEqual(rowKeys(restored), rowKeys(listing), 'removing the last selection restores all packages');
+  }
   const activityRow = listing.match(/<tr data-key="success"[^]*?<\/tr>/)[0];
   for (const [kind, title, count] of [['pr', 'Open pull requests', 2], ['issue', 'Open issues', 1]]) {
     const counter = activityRow.match(new RegExp(`<a href="/packages/success#github-${kind}"[^]*?</a>`))[0];
@@ -509,88 +496,16 @@ try {
     assert.match(counter, /class="value value-text /);
   }
   assert.doesNotMatch(listing.match(/<tr data-key="ahead"[^]*?<\/tr>/)[0], /#github-/);
-  const alertLinks = [...packageMenu.matchAll(/href="([^"]+)"/g)].map(([, href]) => filterFrom(href));
-  for (const value of ['Outdated', 'Untracked', 'CheckFailed']) {
-    assert.ok(alertLinks.some(q => q.tail.some(c => c.dimension === 'maintenance' && c.value === value)));
-  }
-  assert.match(packageMenu, />DepMismatch<\/span>[^]*?>DepChanges<\/span>/);
-  const simpleLink = [...packageMenu.matchAll(/href="([^"]+)"/g)]
-    .map(([, href]) => href).find(href => href === '/?DepMismatch');
-  assert.equal(simpleLink, '/?DepMismatch');
-  const simplePage = await read(simpleLink);
-  const equivalentPage = await read(filtered([[['maintenance', 'DepMismatch']]]));
-  assert.deepEqual(mainHTML(simplePage).match(/<tr data-key="[^"]+"/g), mainHTML(equivalentPage).match(/<tr data-key="[^"]+"/g));
-  assert.deepEqual(mainHTML(simplePage).match(/\b\d+ packages\b/g), mainHTML(equivalentPage).match(/\b\d+ packages\b/g));
-  const inlineURL = '/?per_page=2&Outdated=AND&Advisory=OR&DepMismatch=AND';
-  const inlineQuery = filterFrom(inlineURL);
-  const inlinePage = await read(inlineURL);
-  assert.deepEqual([...inlinePage.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"/g)]
-    .map(([, key, value]) => [key, value]), [['per_page', '2']]);
-  for (const [, href] of inlinePage.matchAll(/href="([^"]+)"/g)) {
-    const url = new URL(href.replaceAll('&amp;', '&'), 'http://fixture');
-    if (url.searchParams.get('page') === '2') assert.deepEqual(filterFrom(href), inlineQuery);
-  }
-  const excludedURL = '/?Outdated=AND&Advisory=NOT&next_logic=not';
-  const excludedPage = await read(excludedURL);
-  const outdatedKeys = rowKeys(await read('/?Outdated=AND'));
-  const advisoryKeys = rowKeys(await read('/?Advisory=AND'));
-  const combinedKeys = rowKeys(await read('/?Outdated=AND&Advisory=OR'));
-  assert.ok(advisoryKeys.has('advisory-current'));
-  assert.ok(!outdatedKeys.has('advisory-current'));
-  assert.deepEqual([...combinedKeys].sort(), [...new Set([...outdatedKeys, ...advisoryKeys])].sort());
-  assert.deepEqual(rowKeys(excludedPage), outdatedKeys.difference(advisoryKeys));
-  assert.ok(!rowKeys(excludedPage).has('advisory-current'));
-  await assertGlobalSearch(excludedPage, 'advisory-current');
-  assert.match(excludedPage, /class="condition-operator">NOT/);
-  assert.match(excludedPage, /aria-current="true"[^>]*>NOT|>NOT<\/a>/);
-  const leadingNot = await read('/?Outdated=NOT&Advisory=AND');
-  assert.deepEqual(rowKeys(leadingNot), advisoryKeys.difference(outdatedKeys));
-  console.log('PASS NOT: set subtraction, ordered filter links and independent search');
-  const alertCount = (html, label) => {
-    const alerts = html.match(/<nav[^>]*aria-label="Alerts"[^]*?<\/nav>/)[0];
-    return Number(alerts.match(new RegExp(`>${label}</span></span>\\s*<b>(\\d+)</b>`))[1]);
-  };
-  const unionTerms = [[['maintenance', 'Outdated'], ['maintenance', 'Untracked']]];
-  const unionCount = alertCount(listing, 'Outdated') + alertCount(listing, 'Untracked');
-  const palettes = {};
-  for (const mode of ['and', 'or']) {
-    const unionPage = await read(filtered(unionTerms, {next_logic: mode}, 'or'));
-    assert.deepEqual(mainHTML(unionPage).match(/\b\d+ packages\b/g), [`${unionCount} packages`]);
-    assert.equal((mainHTML(unionPage).match(/<tr data-key=/g) || []).length, unionCount);
-    for (const label of ['Outdated', 'Untracked']) {
-      assert.equal(alertCount(unionPage, label), mode === 'or' ? 0 : alertCount(listing, label));
-    }
-    palettes[mode] = Object.fromEntries(['Outdated', 'Untracked', 'Advisory', 'EOL', 'DepMismatch']
-      .map(label => [label, alertCount(unionPage, label)]));
-  }
-  assert.equal(palettes.or.Outdated, 0);
-  assert.equal(palettes.or.Untracked, 0);
-  assert.equal(palettes.and.EOL, 0);
-  const notModePage = await read('/?advanced=1&next_logic=not');
-  assert.deepEqual(rowKeys(notModePage), rowKeys(listing));
-  for (const label of ['Outdated', 'Advisory', 'DepMismatch']) {
-    assert.equal(alertCount(notModePage, label), alertCount(listing, label));
-  }
-  const secondPage = await read('/?advanced=1&page=2&per_page=2');
-  const modeMenu = secondPage.match(/<nav[^>]*aria-label="Next operator"[^]*?<\/nav>/)[0];
-  for (const [, href] of modeMenu.matchAll(/href="([^"]+)"/g)) {
-    const target = href.replaceAll('&amp;', '&');
-    assert.equal(new URL(target, 'http://fixture').searchParams.get('page'), '2');
-    assert.deepEqual(rowKeys(await read(target)), rowKeys(secondPage));
-  }
-  const paginatedUnion = await read(filtered(unionTerms, {next_logic: 'or', per_page: '2'}, 'or'));
-  assert.deepEqual(mainHTML(paginatedUnion).match(/\b\d+ packages\b/g), [`${unionCount} packages`]);
-  assert.equal((mainHTML(paginatedUnion).match(/<tr data-key=/g) || []).length, 2);
-  const pageLinks = ['above', 'below'].map(position => {
-    const navigation = paginatedUnion.match(new RegExp(`<nav[^>]*aria-label="Pages ${position} results"[^]*?</nav>`))[0];
-    return [...navigation.matchAll(/href="([^"]+)"/g)].map(([, href]) => href);
-  });
-  assert.ok(pageLinks[0].length > 0);
-  assert.deepEqual(pageLinks[0], pageLinks[1]);
-  console.log('PASS palette counts: intersection, additions and removals; ordered condition/group parameters, search inputs and pagination');
+  const subset = await read(filtered([[['maintenance', 'Outdated'], ['maintenance', 'Advisory']]]));
+  const outdatedKeys = rowKeys(await read(filtered([[['maintenance', 'Outdated']]])));
+  const advisoryKeys = rowKeys(await read(filtered([[['maintenance', 'Advisory']]])));
+  assert.deepEqual(rowKeys(subset), outdatedKeys.union(advisoryKeys));
+  const narrowed = await read(filtered([[['maintenance', 'Advisory'], ['build:rva23', 'failed']]]));
+  const failedKeys = rowKeys(await read(filtered([[['build:rva23', 'failed']]])));
+  assert.deepEqual(rowKeys(narrowed), advisoryKeys.intersection(failedKeys));
   const changedPage = await read(filtered([[['version_signal', 'requires']]]));
-  assert.match(changedPage, /aria-label="Remove DepChanges"/);
   await assertGlobalSearch(changedPage, 'advisory-current');
+  console.log('PASS facets: unfiltered default, GET toggles, unions, intersections and clearing');
   const untrackedRow = listing.match(/<tr data-key="untracked"[^]*?<\/tr>/)[0];
   const untrackedCells = [...untrackedRow.matchAll(/<t[hd]\b[^>]*>([^]*?)<\/t[hd]>/g)].map(match => match[1]);
   assert.match(untrackedCells[1], />2\.0</);
@@ -611,53 +526,15 @@ try {
   assert.match(errorPage, /Fixture provider timeout/);
   assertCollapsedChecksLast(errorPage);
   assert.equal((packageMenu.match(/>LicenseDiff<\/span>/g) || []).length, 1);
-  assert.match(packageMenu, />LicenseDiff<\/span><\/span>\s*<b>1<\/b>/);
-  assert.equal((listing.match(/<button[^>]*type="submit"/g) || []).length, 1);
   const terms = [['buildsystem', '_not_detected'], ['maintenance', 'LicenseDiff'], ['build:rva23', 'failed']];
   const scoped = await read(filtered([terms]));
-  for (const label of ['BuildSystem: ❔ custom', 'LicenseDiff', 'rva23: Failed']) {
-    assert.ok(scoped.includes(`aria-label="Remove ${label}"`));
-  }
-  const clearBuild = scoped.match(/<a href="([^"]+)" aria-label="Remove rva23: Failed"/)[1];
-  assert.deepEqual(filterFrom(clearBuild).tail, terms.slice(0, 2).map(([dimension, value]) => ({dimension, value, logic: 'and'})));
   assert.match(scoped, /0 packages/);
+  const zeroSelected = filterForms(scoped).find(form => form.includes('>LicenseDiff</span>'));
+  assert.ok(zeroSelected, 'selected zero-count filters remain removable');
+  assert.match(zeroSelected, /aria-pressed="true"/);
+  assert.match(zeroSelected, /<b>0<\/b>/);
+  assert.ok(rowKeys(await read(formURL(zeroSelected))).size > 0);
   await assertGlobalSearch(scoped, 'success');
-  assert.match(scoped, /aria-label="Next operator"/);
-  const grouped = await read(filtered([[['build:rva23', 'failed'], ['build:rva23', 'unresolvable']], [['maintenance', 'Advisory']]], {next_logic: 'or'}, 'or'));
-  assert.equal((grouped.match(/class="logic-switch"/g) || []).length, 1);
-  assert.match(grouped, /data-group-id="0"/);
-  assert.match(grouped, /data-group-id="1"/);
-  assert.match(grouped, /aria-label="Remove group 1"/);
-  assert.equal((grouped.match(/class="group-add"/g) || []).length, 1);
-  const searchIndex = grouped.indexOf('type="submit">Search');
-  const switchIndex = grouped.indexOf('aria-label="Next operator"');
-  const clearIndex = grouped.indexOf('class="filter-clear"');
-  const groupsIndex = grouped.indexOf('data-group-id="0"');
-  assert.ok(searchIndex < switchIndex && switchIndex < clearIndex && clearIndex < groupsIndex);
-  assert.ok(groupsIndex < grouped.indexOf('<table'));
-  assert.match(grouped, /data-group-id="0" data-palette="0"/);
-  assert.match(grouped, /data-group-id="0" data-palette="0"[^]*?<span class="condition-operator">AND<\/span>/);
-  const leadingOrPage = await read('/?Advisory=OR');
-  assert.deepEqual(mainHTML(leadingOrPage).match(/\b\d+ packages\b/g), mainHTML(listing).match(/\b\d+ packages\b/g));
-  const sealLink = grouped.match(/class="group-add" href="([^"]+)"/)[1];
-  const sealedQuery = filterFrom(sealLink);
-  assert.equal(sealedQuery.groups.length, 2);
-  assert.equal(sealedQuery.groups[1].logic, 'or');
-  assert.equal(sealedQuery.tail.length, 0);
-  const sealedHTML = await read(sealLink.replaceAll('&amp;', '&'));
-  assert.match(sealedHTML, /class="group-add"[^>]*aria-disabled="true"/);
-  const removeGroup = sealedHTML.match(/class="group-clear" href="([^"]+)" aria-label="Remove group 1"/)[1];
-  assert.deepEqual(filterFrom(removeGroup).groups, sealedQuery.groups.slice(1));
-  const queryContract = await (await fetch(`http://127.0.0.1:${mock.address().port}/api/ui/packages`)).json();
-  const nodeLimit = queryContract.controls.editor.node_limit;
-  const atLimit = await read(filtered([Array.from({length: nodeLimit}, (_, i) => ['maintenance', `c${i}`])]));
-  assert.equal((atLimit.match(/aria-label="Remove /g) || []).length, nodeLimit);
-  assert.match(atLimit, new RegExp(`Query limit: ${nodeLimit} groups \\+ conditions`));
-  assert.match(atLimit, /class="group-add"[^>]*aria-disabled="true"/);
-  const clearAtLimit = atLimit.match(/class="filter-clear" href="([^"]+)"/)[1];
-  assert.doesNotMatch(await read(clearAtLimit.replaceAll('&amp;', '&')), /data-group-id=/);
-  const exactCheck = await read(filtered([[['check:security', 'expired']]], {monitor: 'security', section: 'coverage'}));
-  assert.match(exactCheck, /aria-label="Remove Advisory: Stale"/);
   const paged = await read('/?per_page=3&page=2');
   const topPager = paged.match(/<nav[^>]*aria-label="Pages above results"[^]*?<\/nav>/)[0];
   const bottomPager = paged.match(/<nav[^>]*aria-label="Pages below results"[^]*?<\/nav>/)[0];
@@ -706,7 +583,7 @@ try {
   assert.doesNotMatch(focused, /data-key="success"/);
   const coverage = await read(filtered([[['check:yanked', 'ok']]], {monitor: 'yanked', section: 'coverage'}));
   assert.match(coverage, />Version<\/th>/);
-  assert.match(coverage, /Remove Release files: Checked/);
+  assert.match(coverage, /Reset filters/);
   const unknownPort = await read('/packages/yanked');
   assert.match(unknownPort, /Release withdrawn/);
   assert.match(unknownPort, />Files<\/dt>/);
@@ -717,6 +594,17 @@ try {
   assert.match(statusPanel, /intentional fixture error/);
   assert.doesNotMatch(listing.slice(listing.indexOf('<main'), listing.indexOf('</main>')), /intentional fixture error/);
   assert.match(statusPanel, /Collection checks across all packages/);
+  const failedCheckURL = [...statusPanel.matchAll(/href="([^"]+)"/g)]
+    .map(([, href]) => href.replaceAll('&amp;', '&'))
+    .find(href => new URL(href, 'http://fixture').searchParams.getAll('select').includes('check:version=error'));
+  assert.ok(failedCheckURL, 'Data status links to the observed error status');
+  const failedCoverage = await read(failedCheckURL);
+  const errorChoice = filterForms(failedCoverage).find(form => form.includes('id="select-Checks-CheckFailed"'));
+  assert.ok(errorChoice, 'the same status is available in Coverage');
+  assert.match(errorChoice, /aria-pressed="true"/);
+  assert.deepEqual(rowKeys(failedCoverage), new Set(['check-error']));
+  assert.doesNotMatch(failedCoverage, /aria-label="Remove Version: CheckFailed"/);
+  assert.deepEqual(rowKeys(await read(formURL(errorChoice))), rowKeys(listing));
   const packageRows = name => listing.match(new RegExp(`<tr data-key="${name}"[^]*?</tbody>`))?.[0] ?? '';
   const row = name => listing.match(new RegExp(`<tr data-key="${name}"[^]*?</tr>`))?.[0] ?? '';
   assert.match(row('success'), /data-appearance="buildsystem%3Acustom"/);
@@ -737,7 +625,7 @@ try {
   appearancePalette = {custom: {background: '#654321', foreground: '#eeeeee'},
     'unsafe\"}body{color:red}': {background: '#123456;display:none', foreground: '#ffffff'}};
   const changedPaletteCSS = await read('/presentation.css');
-  assert.match(changedPaletteCSS, /--appearance-background:#654321;--appearance-foreground:#eeeeee/);
+  assert.match(changedPaletteCSS, /--appearance-background:#654321;--appearance-foreground:#ffffff/);
   assert.doesNotMatch(changedPaletteCSS, /unsafe|body|display|#123456/);
   for (const icon of ['rust', 'waf']) {
     appearancePalette = {custom: {background: '#123456', foreground: '#ffffff', icon}};
@@ -746,7 +634,7 @@ try {
   }
   for (const icon of ['not-in-catalog', '../gopher', 'https://untrusted.example/logo.svg']) {
     appearancePalette.custom.icon = icon;
-    const fallback = (await read('/')).match(/<nav[^>]*aria-label="BuildSystem"[^]*?<\/nav>/)[0];
+    const fallback = (await read('/')).match(/<div[^>]*role="group" aria-label="BuildSystem"[^]*?<\/div>/)[0];
     assert.doesNotMatch(fallback, /<img|untrusted|not-in-catalog/);
     assert.match(fallback, />custom<\/span>/);
   }
@@ -786,11 +674,16 @@ try {
   assert.equal((security.match(/>Observed version<\/dt>/g) || []).length, 1);
   assert.equal((security.match(/>Reported fixes<\/dt>/g) || []).length, 8);
   const versionList = await read('/?monitor=version');
-  const versionViews = versionList.match(/<nav[^>]*aria-label="Version"[^]*?<\/nav>/)[0];
+  const versionViews = versionList.match(/<div[^>]*role="group" aria-label="Version"[^]*?<\/div>/)[0];
   assert.match(versionViews, />Outdated<\/span>/);
-  const updatesList = await read(filtered([[['view', 'updates']]], {monitor: 'version'}));
-  assert.match(updatesList, /aria-label="Remove Outdated"/);
-  assert.match(versionList, /<nav[^>]*aria-label="Related"/);
+  const versionChecks = versionList.match(/<div[^>]*role="group" aria-label="Checks"[^]*?<\/div>/)[0];
+  for (const label of ['Checked', 'CheckFailed', 'Not configured']) assert.ok(versionChecks.includes(label));
+  const updatesList = await read(filtered([[['maintenance', 'Outdated']]], {monitor: 'version'}));
+  assert.ok(rowKeys(updatesList).size > 0);
+  const selectedOutdated = filterForms(updatesList).find(form => form.includes('id="select-Version-Outdated"'));
+  assert.match(selectedOutdated, /aria-pressed="true"/);
+  assert.doesNotMatch(updatesList, /aria-label="Remove Outdated"/);
+  assert.match(versionList, /<div[^>]*role="group" aria-label="Related"/);
   const versionRelated = await read(filtered([[['version_signal', 'security']]], {monitor: 'version', q: 'security'}));
   assert.match(versionRelated, /data-key="security"/);
   assert.doesNotMatch(versionRelated, /data-key="license-evidence"/);
@@ -829,12 +722,21 @@ try {
   assert.match(requiresRow('requires-current'), /libcurrent/);
   assert.doesNotMatch(requiresRow('requires-current'), /→|Upgrade:|>2\.0</);
   assert.match(requiresRow('requires-target-only'), /libtarget<[^]*?Upgrade:[^]*?>✗</);
-  const requirementNav = requiresList.match(/<nav[^>]*aria-label="Dependencies"[^]*?<\/nav>/)[0];
-  for (const label of ['DepMismatch', 'DepChanges', 'Uncovered', 'CheckFailed']) assert.ok(requirementNav.includes(label));
-  const requiresFiltered = await read(filtered([[['requires', 'unmet']]], {monitor: 'requires', per_page: '1'}));
-  assert.match(requiresFiltered, /Remove DepMismatch/);
+  const requirementNav = requiresList.match(/<div[^>]*role="group" aria-label="Dependencies"[^]*?<\/div>/)[0];
+  for (const label of ['DepMismatch', 'DepChanges']) assert.ok(requirementNav.includes(label));
+  const requirementChecks = requiresList.match(/<div[^>]*role="group" aria-label="Checks"[^]*?<\/div>/)[0];
+  assert.match(requirementChecks, />Checked<\/span>/);
+  const requiresFiltered = await read(filtered([[['maintenance', 'DepMismatch']]], {monitor: 'requires', per_page: '1'}));
+  assert.match(requiresFiltered, /Reset filters/);
+  const selectedMismatch = filterForms(requiresFiltered).find(form => form.includes('id="select-Dependencies-DepMismatch"'));
+  assert.match(selectedMismatch, /aria-pressed="true"/);
+  assert.doesNotMatch(requiresFiltered, /aria-label="Remove DepMismatch"/);
+  const depChanges = await read(filtered([[['maintenance', 'DepChanges']]], {monitor: 'requires'}));
+  const selectedChanges = filterForms(depChanges).find(form => form.includes('id="select-Dependencies-DepChanges"'));
+  assert.match(selectedChanges, /aria-pressed="true"/);
+  assert.doesNotMatch(depChanges, /aria-label="Remove DepChanges"/);
   await assertGlobalSearch(requiresFiltered, 'advisory-current', '1');
-  const requiresCoverage = await read(filtered([[['check:requires', 'uncovered'], ['requires', 'unmet']]], {monitor: 'requires', section: 'coverage'}));
+  const requiresCoverage = await read(filtered([[['check:requires', 'uncovered'], ['maintenance', 'DepMismatch']]], {monitor: 'requires', section: 'coverage'}));
   assert.match(requiresCoverage, />Version<\/th>/);
   assert.match(requiresCoverage, /0 packages/);
   const uncovered = await read(filtered([[['check:version', 'uncovered']]], {monitor: 'version', section: 'coverage'}));
@@ -849,14 +751,15 @@ try {
   for (const target of targets) {
     assert.match(buildList, new RegExp(`aria-label="Filter ${target.label}"`));
   }
-  assert.doesNotMatch(buildList, /class="choice-row"/);
-  const buildFiltered = await read(filtered([[['build:rva23', 'failed'], ['build:rva23', 'unresolvable']]], {monitor: 'build'}, 'or'));
-  const selectedTarget = buildFiltered.match(/<nav[^>]*aria-label="rva23"[^]*?<\/nav>/)[0];
-  assert.equal((selectedTarget.match(/aria-current="page"/g) || []).length, 2);
+  const buildFiltered = await read(filtered([[['build:rva23', 'failed'], ['build:rva23', 'unresolvable']]], {monitor: 'build'}));
+  const selectedTarget = buildFiltered.match(/<div[^>]*role="group" aria-label="rva23"[^]*?<\/div>/)[0];
+  assert.equal((selectedTarget.match(/aria-pressed="true"/g) || []).length, 2);
+  assert.match(buildFiltered, /class="navigation-menu-trigger has-selection"[^>]*aria-label="Filter rva23: Failed, Unresolvable"/);
+  for (const label of ['rva23: Failed', 'rva23: Unresolvable']) {
+    assert.ok(buildFiltered.includes(`aria-label="Remove ${label}"`));
+  }
   assert.match(buildFiltered, /data-key="failed"/);
   assert.match(buildFiltered, /data-key="build-reason"/);
-  const impossibleBuild = await read(filtered([[['build:rva23', 'failed'], ['build:rva23', 'unresolvable']]], {monitor: 'build'}));
-  assert.match(impossibleBuild, /0 packages/);
   assert.match(buildList, /nothing provides &lt;fixture-dependency&gt;/);
   assert.doesNotMatch(buildList, /worker:\/\//);
   const aggregateReason = packageRows('build-reason');
@@ -951,9 +854,7 @@ try {
   const css=await wire(cssPath,{'Accept-Encoding':'gzip'});assert.equal(css.status,200);assert.equal(css.headers['content-encoding'],'gzip');assert.match(css.headers['cache-control'],/immutable/);assert.ok(gunzipSync(css.body).length>css.body.length);
   const appCSS = gunzipSync(css.body).toString();
   assert.ok([...appCSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].some(([, selectors, body]) => selectors.split(',').includes('.value-tag') && body.includes('var(--appearance-background')), 'tag colors use the declared palette');
-  assert.match(appCSS, /\.value-tag\[data-variant=solid\]\{[^}]*var\(--appearance-foreground/);
-  assert.match(appCSS, /\[aria-current\]\[data-appearance\]\{[^}]*color-mix\([^}]*var\(--appearance-background/);
-  assert.match(appCSS, /\[aria-current\]\[data-appearance\]\{[^}]*box-shadow:[^}]*var\(--appearance-background/);
+  assert.match(appCSS, /\.value-tag\[data-size=small\]/);
   const range=await wire(cssPath,{'Accept-Encoding':'gzip',Range:'bytes=0-9'});assert.equal(range.status,206);assert.equal(range.headers['content-encoding'],undefined);assert.equal(range.body.length,10);
   assert.equal((await wire('/',{},'HEAD')).body.length,0);
   const json=await wire('/api/v2/packages',{'Accept-Encoding':'gzip'});assert.equal(json.status,200);assert.equal(json.headers['cache-control'],'no-store');assert.equal(json.headers['content-encoding'],'gzip');assert.ok(JSON.parse(gunzipSync(json.body)).items.length>0);

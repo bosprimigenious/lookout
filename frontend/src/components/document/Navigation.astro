@@ -1,14 +1,17 @@
 ---
 import {safeHref, type Navigation} from '../../lib/document';
-import {logo} from '../../lib/logos';
+import SelectionButton from './SelectionButton.astro';
 interface Props {navigation: Navigation}
 const {navigation} = Astro.props;
+const Tag = navigation.selection ? 'div' : 'nav';
 ---
-<nav class="document-nav" aria-label={navigation.label}>
+<Tag class:list={['document-nav', {'selection-nav': navigation.selection}]}
+  role={navigation.selection ? 'group' : undefined} aria-label={navigation.label}>
   {navigation.choices.map(choice => {
-    const image = logo(choice.icon);
-    return <a href={safeHref(choice.href)} aria-disabled={!choice.href || undefined} aria-current={choice.selected ? 'page' : undefined}
-    data-appearance={choice.appearance ? encodeURIComponent(choice.appearance) : undefined}>
-    <span class="choice-label">{image && <img src={image.src} width="18" height="18" alt="" class:list={['brand-icon', {monochrome: image.monochrome}]}/>}<span>{image?.trademark && <sup aria-hidden="true">{image.trademark}</sup>}{choice.label}</span></span>{choice.count != null && <b>{choice.count}</b>}
-  </a>})}
-</nav>
+    if (navigation.selection) return <SelectionButton choice={choice} group={navigation.label}/>;
+    const href = safeHref(choice.href);
+    const appearance = choice.appearance ? encodeURIComponent(choice.appearance) : undefined;
+    return <a href={href} aria-disabled={!href || undefined} aria-current={choice.selected ? 'page' : undefined}
+      data-appearance={appearance}><span class="choice-label">{choice.label}</span>{choice.count != null && <b>{choice.count}</b>}</a>;
+  })}
+</Tag>

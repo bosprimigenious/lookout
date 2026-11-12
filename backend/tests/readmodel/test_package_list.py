@@ -40,11 +40,17 @@ def test_search_view_and_empty_selected_option(snapshot):
     snapshot['builds']['binutils']['rva23']['raw_status'] = 'blocked'
     rows, _ = view.project_monitors(snapshot)
     index = PackageList(rows, snapshot['targets'], 'BIN')
-    result = index.select(filters=conjunction({'view': 'updates', 'buildsystem': '', 'maintenance': '', **{'build:' + target: value for target, value in ({'rva23': 'failed'}).items()}}), page=999, per_page=1)
+    result = index.select(filters=conjunction({'view': 'updates', 'build:rva23': 'failed'}), page=999, per_page=1)
     assert result['total'] == 0 and result['page'] == 1
     assert {'value': 'failed', 'label': 'Failed', 'count': 0} in result['build_statuses']['rva23']
-    assert {'value': 'blocked', 'label': 'Blocked', 'count': 0} in result['build_statuses']['rva23']
+    assert {'value': 'blocked', 'label': 'Blocked', 'count': 1} in result['build_statuses']['rva23']
     assert all(count == 0 for count in result['counts'].values())
+    for option in result['build_statuses']['rva23']:
+        alternative = index.select(filters=conjunction({'view': 'updates', 'build:rva23': option['value']}))
+        assert alternative['total'] == option['count']
+        assert {row['name'] for row in alternative['items']} == ({'binutils'} if option['value'] == 'blocked' else set())
+    searched = index.select(filters=conjunction({'view': 'updates', 'build:rva23': 'failed'}), query='foo')
+    assert next(option['count'] for option in searched['build_statuses']['rva23'] if option['value'] == 'blocked') == 0
 
 
 def test_build_choices_follow_obs_order_without_changing_aggregation_rank():
@@ -56,5 +62,5 @@ def test_build_choices_follow_obs_order_without_changing_aggregation_rank():
     for selected in ('', 'failed'):
         result = index.select(filters=conjunction({'buildsystem': '', 'maintenance': [], **{'build:' + target: value for target, value in ({'target': selected}).items()}}), page=1, per_page=100)
         assert [item['value'] for item in result['build_statuses']['target']] == [*codes, 'future-state']
-        assert all(item['count'] == int(not selected or item['value'] == selected) for item in result['build_statuses']['target'])
+        assert all(item['count'] == 1 for item in result['build_statuses']['target'])
     assert build_status.describe('failed').rank < build_status.describe('succeeded').rank

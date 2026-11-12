@@ -45,22 +45,10 @@ export interface components {
              */
             navigation: components["schemas"]["Navigation"][];
         };
-        /** Condition */
-        Condition: {
-            /** Dimension */
-            dimension: string;
-            /** Value */
-            value: string;
-            /**
-             * Logic
-             * @default and
-             * @enum {string}
-             */
-            logic: "and" | "or" | "not";
-        };
         /** Controls */
         Controls: {
-            editor: components["schemas"]["FilterEditor"];
+            /** Reset */
+            reset: string;
             /**
              * Action
              * @default /
@@ -162,94 +150,6 @@ export interface components {
             /** Values */
             values: components["schemas"]["Text"][];
         };
-        /** FilterCondition */
-        FilterCondition: {
-            /** Appearance */
-            appearance: string | null;
-            /** Icon */
-            icon: string | null;
-            /** Label */
-            label: string;
-            /** Href */
-            href: string | null;
-            /**
-             * Selected
-             * @default false
-             */
-            selected: boolean;
-            /** Count */
-            count: number | null;
-            /** Logic */
-            logic: string;
-        };
-        /** FilterEditor */
-        FilterEditor: {
-            query: components["schemas"]["FilterQuery"];
-            advanced: components["schemas"]["Choice"];
-            /** Node Count */
-            node_count: number;
-            /**
-             * Node Limit
-             * @default 128
-             */
-            node_limit: number;
-            /** Groups */
-            groups: components["schemas"]["FilterGroup"][];
-            /** Operators */
-            operators: components["schemas"]["Choice"][];
-            /** Group */
-            group: string | null;
-            /** Clear */
-            clear: string;
-        };
-        /** FilterGroup */
-        FilterGroup: {
-            /** Id */
-            id: number;
-            /** Closed */
-            closed: boolean;
-            /** Palette */
-            palette: (0 | 1 | 2 | 3) | null;
-            /** Logic */
-            logic: string;
-            /** Conditions */
-            conditions: components["schemas"]["FilterCondition"][];
-            /** Clear */
-            clear: string | null;
-        };
-        /** FilterQuery */
-        FilterQuery: {
-            /**
-             * Mode
-             * @default advanced
-             * @enum {string}
-             */
-            mode: "basic" | "advanced";
-            /**
-             * Groups
-             * @default []
-             */
-            groups: components["schemas"]["Group"][];
-            /**
-             * Tail
-             * @default []
-             */
-            tail: components["schemas"]["Condition"][];
-        };
-        /** Group */
-        Group: {
-            /**
-             * Logic
-             * @default and
-             * @enum {string}
-             */
-            logic: "and" | "or" | "not";
-            /**
-             * Conditions
-             * @default []
-             */
-            conditions: components["schemas"]["Condition"][];
-        };
         /** ListingDocument */
         ListingDocument: {
             /**
@@ -295,6 +195,11 @@ export interface components {
              * @default true
              */
             show_label: boolean;
+            /**
+             * Selection
+             * @default false
+             */
+            selection: boolean;
             /** Icon */
             icon: string | null;
             /** Choices */
@@ -404,11 +309,11 @@ export interface components {
              */
             kind: "text" | "code" | "tag" | "time" | "icon";
             /**
-             * Variant
-             * @default outline
+             * Size
+             * @default normal
              * @enum {string}
              */
-            variant: "outline" | "solid";
+            size: "normal" | "small";
             /**
              * Tone
              * @default normal

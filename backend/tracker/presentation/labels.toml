@@ -16,38 +16,30 @@ background = "#626b75"
 foreground = "#ffffff"
 
 [labels."Outdated"]
-facet = true
 style = "important"
 
 [labels."Untracked"]
-facet = true
 style = "neutral"
 
 [labels."CheckFailed"]
-facet = true
-style = "neutral"
+style = "warning"
 
 [labels."DepMismatch"]
-facet = true
 style = "important"
 
 [labels."Advisory"]
-facet = true
 style = "important"
 
 [labels."KEV"]
 style = "important"
 
 [labels."LicenseDiff"]
-facet = true
 style = "warning"
 
 [labels."Yanked"]
-facet = true
 style = "important"
 
 [labels."EOL"]
-facet = true
 style = "important"
 
 [labels."Out of date"]
@@ -84,11 +76,9 @@ icon = "obs-circle-exclamation"
 style = "important"
 
 [labels.PR]
-facet = false
 style = "neutral"
 
 [labels.Issue]
-facet = false
 style = "neutral"
 
 [styles.github-open]

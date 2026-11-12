@@ -100,7 +100,8 @@ def scoped_client(snapshot, tmp_path, monkeypatch):
             'requires': requirement_choices.get(name, []),
             'check:requires': [checks[name]],
             'findings:requires': ['yes'] if name in requirement_choices else [],
-            'maintenance': ['DepMismatch'] if name in requirement_choices else [],
+            'maintenance': (['DepMismatch'] if 'unmet' in requirement_choices.get(name, ()) else [])
+                           + (['DepChanges'] if 'changes' in requirement_choices.get(name, ()) else []),
         })
         signature = row['monitors']['fixture_signature']
         signature['check']['status'] = checks[name]

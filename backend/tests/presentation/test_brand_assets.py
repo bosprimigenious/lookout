@@ -46,7 +46,7 @@ def test_build_icons_are_local_inert_and_filters_keep_text():
         assert text(label, kind='tag').icon is None
     from tracker.monitors.build.status import STATES, label
     assert all(CATALOG[label(code)].get('icon') for code in STATES)
-    navigation = maintenance_navigation({'maintenance_labels': {}, 'version_signals': {}}, Links())
+    navigation = maintenance_navigation({'maintenance_labels': {'Outdated': 1}}, Links())[0]
     for choice in navigation.choices:
         assert choice.icon is None
         assert choice.label and choice.href

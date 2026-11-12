@@ -22,9 +22,3 @@ def modes(page):
 
 def inline_navigation(page):
     return page['controls']['choice_rows']
-
-
-def facet_destination(client, page, choice):
-    result = follow(client, choice['href'])
-    assert (page['total'] if choice['selected'] else result['total']) == choice['count']
-    return result

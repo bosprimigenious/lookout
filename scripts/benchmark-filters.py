@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Offline, deterministic query-budget measurement; no provider or database IO."""
 import json
-from pathlib import Path
 import statistics
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from tracker.readmodel.packages import PackageList
-from tracker.readmodel.query import Condition, FilterQuery, MAX_QUERY_NODES, encode_parameters
+from tracker.readmodel.query import MAX_QUERY_NODES, FilterQuery, encode_parameters
 
 
 def main():
@@ -21,43 +21,16 @@ def main():
     index = PackageList(rows, [{'id': str(i)} for i in range(3)])
     samples = []
     for nodes in (16, 32, 64, MAX_QUERY_NODES):
-        for root in ('and', 'or'):
-            groups = []
-            remaining = nodes
-            while remaining >= 2:
-                count = min(15, remaining - 1)
-                groups.append({'logic': root, 'conditions': [
-                    {'dimension': 'maintenance', 'value': f'label-{(len(groups) * 7 + i) % 64}', 'logic': 'or'}
-                    for i in range(count)]})
-                remaining -= count + 1
-            if remaining:
-                groups.append({'logic': 'and', 'conditions': []})
-            wire = FilterQuery.model_validate({'groups': groups}).parameters()
-            durations = []
-            for _ in range(31):
-                start = time.perf_counter()
-                query = FilterQuery.extract(wire)[0]
-                result = index.select(filters=query, next_logic=root, per_page=100)
-                durations.append((time.perf_counter() - start) * 1000)
-            samples.append({'nodes': nodes, 'group_join_and_next': root, 'packages': len(rows),
-                'candidate_counts': sum(len(result[key]) for key in (
-                    'counts', 'buildsystems', 'maintenance_labels', 'version_signals', 'requires_counts'))
-                    + sum(map(len, result['build_statuses'].values())),
-                'url_bytes': len(encode_parameters(query.parameters())), 'p50_ms': round(statistics.median(durations), 3),
-                'p95_ms': round(sorted(durations)[29], 3)})
-    terms = tuple(Condition(dimension=dimension, value=value)
-        for dimension, values in index.index.items() if dimension != 'view'
-        for value in values)
-    ordinary = FilterQuery(mode='basic', tail=terms[:124])
-    durations = []
-    for _ in range(31):
-        start = time.perf_counter()
-        parsed = FilterQuery.extract(ordinary.parameters())[0]
-        index.select(filters=parsed)
-        durations.append((time.perf_counter() - start) * 1000)
-    samples.append({'mode': 'basic', 'nodes': ordinary.nodes, 'packages': len(rows),
-        'url_bytes': len(encode_parameters(ordinary.parameters())),
-        'p50_ms': round(statistics.median(durations), 3), 'p95_ms': round(sorted(durations)[29], 3)})
+        query = FilterQuery(selections={'maintenance': tuple(f'label-{i}' for i in range(nodes))})
+        wire = query.parameters()
+        durations = []
+        for _ in range(31):
+            start = time.perf_counter()
+            index.select(filters=FilterQuery.extract(wire)[0], per_page=100)
+            durations.append((time.perf_counter() - start) * 1000)
+        samples.append({'selections': nodes, 'packages': len(rows),
+            'url_bytes': len(encode_parameters(wire)), 'p50_ms': round(statistics.median(durations), 3),
+            'p95_ms': round(sorted(durations)[29], 3)})
     print(json.dumps({'python': sys.version, 'node_limit': MAX_QUERY_NODES, 'samples': samples}, indent=2))
 
 

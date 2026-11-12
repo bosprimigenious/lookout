@@ -1,5 +1,4 @@
 """Requires release independence and read-side truth, without native RPM or network."""
-from tests.helpers.query import query_url, terms_in
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -8,6 +7,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from tests.conftest import ProjectedClient
+from tests.helpers.listing import follow
+from tests.helpers.query import query_url, terms_in
 from tracker import state
 from tracker.api import create_app
 from tracker.monitors import model as monitor_model, runner as monitor
@@ -84,11 +85,11 @@ def assessment(snapshot, observation=None, now=NOW):
     return next(row for row in rows if row['name'] == 'binutils')['monitors']['requires']
 
 
-def test_maintenance_filters_proven_conflicts_not_satisfied_changes(config, snapshot, release_setup):
+def test_maintenance_distinguishes_dependency_changes_from_conflicts(config, snapshot, release_setup):
     observed = execute(config, snapshot)
     result = assessment(snapshot, observed)
     assert result['dimensions']['requires'] == ['changes']
-    assert result['dimensions']['maintenance'] == []
+    assert result['dimensions']['maintenance'] == ['DepChanges']
     assert result['data']['labels'] == []
     snapshot['sources']['runtime-package']['version'] = '3.9'
     result = assessment(snapshot)
@@ -96,6 +97,7 @@ def test_maintenance_filters_proven_conflicts_not_satisfied_changes(config, snap
     assert requirement['satisfaction'] == 'satisfied'
     assert requirement['target_satisfaction'] == 'unsatisfied'
     assert result['dimensions']['requires'] == ['unmet', 'changes']
+    assert result['dimensions']['maintenance'] == ['DepMismatch', 'DepChanges']
     assert result['data']['labels'] == [{'label': 'DepMismatch', 'count': 1, 'stale': False}]
 
 
@@ -238,11 +240,14 @@ def test_dependency_only_change_reprojects_unmet_and_preserves_upstream_facts(co
     assert state.read(db)['monitors'] == original
     assert release_setup[1] == ['3.9.0', '3.10.0']
     document = client.get('/api/ui/packages?monitor=requires&q=binutils').json()
-    unmet = next(choice for navigation in document['controls']['navigation']
+    unmet = next(choice for navigation in document['controls']['choice_rows']
                  for choice in navigation['choices'] if choice['label'] == 'DepMismatch')
     query = parse_qs(urlsplit(unmet['href']).query)
-    assert terms_in(unmet['href']) == [('requires', 'unmet')] and query['monitor'] == ['requires']
+    assert terms_in(unmet['href']) == [('maintenance', 'DepMismatch')] and query['monitor'] == ['requires']
     assert query['q'] == ['binutils'] and unmet['count'] == 1
+    selected = follow(client, unmet['href'])
+    assert selected['total'] == unmet['count']
+    assert [row['key'] for row in selected['table']['rows']] == ['binutils']
 
 
 def test_declaration_scopes_have_independent_expiry_and_cache_boundary(config, snapshot, release_setup):

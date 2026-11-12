@@ -298,7 +298,8 @@ def requires(context):
         kind='requires', current_version=context.version.source.get('version'),
         target_version=context.version.upstream.get('version') if context.version.upgrading else None,
         labels=labels, finding_count=len(assessments), requirements=assessments)
-    result['dimensions'].update(maintenance=[Issue.DEP_MISMATCH] if labels else [],
+    result['dimensions'].update(maintenance=([Issue.DEP_MISMATCH] if unmet else [])
+                               + (['DepChanges'] if changed else []),
                                **{'findings:requires': ['yes'] if assessments else []},
                                requires=(['unmet'] if unmet else []) + (['changes'] if changed else [])
                                + (['unknown'] if any(r['satisfaction'] == 'unknown' for r in assessments) else []))

@@ -18,7 +18,7 @@ ARG CHECK_RUNTIME_IMAGE=application
 FROM ${NODE_IMAGE} AS frontend-dependencies
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
-COPY frontend/scripts/harden-http-cache.cjs ./scripts/
+COPY frontend/scripts/harden-http-cache.cjs frontend/scripts/adapt-redocly.cjs ./scripts/
 RUN npm install --global npm@12.2.0 \
     && node --version && npm --version && npm ci
 FROM frontend-dependencies AS frontend

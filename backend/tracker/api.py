@@ -345,7 +345,6 @@ class MonitoredList(BaseModel):
     per_page: int
     pages: int
     filters: FilterQuery
-    next_logic: Literal['and', 'or', 'not']
     query_node_limit: int = MAX_QUERY_NODES
     counts: dict[str, int]
     targets: list[Target]
@@ -381,9 +380,7 @@ class ListingQuery(BaseModel):
     q: str = Field('', max_length=100)
     page: int = Field(1, ge=1, le=1000000)
     per_page: int = Field(100, ge=1, le=200)
-    filters: FilterQuery = Field(default_factory=lambda: FilterQuery(mode='basic'))
-    next_logic: Literal['and', 'or', 'not'] = Field('and',
-        description='Advanced Search operator for the next addition. Candidate counts show AND matches, OR additions or NOT removals. Switching the operator preserves current results and page.')
+    filters: FilterQuery = Field(default_factory=FilterQuery)
     monitor: str = Field('', max_length=64)
     section: Literal['results', 'coverage'] = 'results'
 
@@ -394,14 +391,12 @@ class ListingQuery(BaseModel):
         arrays = {name for name, field in cls.model_fields.items() if get_origin(field.annotation) is list}
         for name, value in remaining:
             if name == 'filters':
-                raise ValueError('Use bare filter flags or TOKEN=AND/OR/NOT and Group parameters')
+                raise ValueError('Use repeated select=FACET=VALUE parameters')
             if name in arrays:
                 values.setdefault(name, []).append(value)
             else:
                 values[name] = value
         parsed = cls.model_validate(values)
-        if parsed.filters.mode == 'basic' and parsed.next_logic != 'and':
-            raise ValueError('next_logic requires Advanced Search')
         return parsed
 
 
@@ -429,7 +424,7 @@ class BatchQuery(MonitorSelection):
 
 
 def read_query(model, request):
-    # A Query model receives a dict; that loses interleaved repeated operators.
+    # Keep repeated facet values; converting to a dict would discard alternatives.
     try:
         return model.from_parameters(request.query_params.multi_items())
     except ValidationError as error:
@@ -454,14 +449,11 @@ def query_schema(model):
         'required': name in schema.get('required', ()),
         **({'description': field['description']} if 'description' in field else {})}
         for name, field in schema['properties'].items() if name != 'filters']
-    parameters.extend([
-        {'name': 'advanced', 'in': 'query', 'required': False,
-         'schema': {'type': 'string', 'enum': ['1']},
-         'description': 'Enable Advanced Search with no conditions. TOKEN=AND/OR/NOT also selects this mode. Bare TOKEN flags select ordinary search: OR within each build target or BuildSystem, AND between other conditions. Use + between alternatives, e.g. rva23_failed+rva23_succeeded&Yanked. Do not mix modes.'},
-        {'name': 'Group', 'in': 'query', 'required': False,
-         'schema': {'type': 'string', 'enum': ['AND', 'OR', 'NOT']},
-         'description': f'Seals preceding ungrouped TOKEN=AND/OR/NOT conditions. Evaluate sequentially from scoped ALL, including inside groups. No nesting. At most {MAX_QUERY_NODES} conditions + group markers, counting repeats before deduplication. Advanced counts show AND matches, OR additions or NOT removals.'},
-    ])
+    parameters.append({'name': 'select', 'in': 'query', 'required': False,
+        'schema': {'type': 'array', 'items': {'type': 'string'}}, 'style': 'form', 'explode': True,
+        'description': f'Repeat select=FACET=VALUE. Values in one facet are OR; facets are AND. '
+            f'Omitted facets are unrestricted. Empty values are invalid. Maximum {MAX_QUERY_NODES} selections, including repeats. '
+            'Counts apply every other facet and the search text. Example: select=maintenance=Advisory&select=build:rva23=failed.'})
     return {'parameters': parameters, 'responses': {422: {'description': 'Invalid query'}}}
 
 
@@ -529,7 +521,7 @@ def create_app(db=None):
             section = 'coverage'
         try:
             result = index.select(query=filters.q, monitor=monitor, filters=filters.filters,
-                next_logic=filters.next_logic, page=filters.page, per_page=filters.per_page,
+                page=filters.page, per_page=filters.per_page,
                 search=search,
                 findings_only=bool(focused and focused['kind'] in ('evidence', 'requires') and section == 'results'))
         except ValueError as error:

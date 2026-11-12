@@ -1,5 +1,5 @@
 """Package coverage and failed subchecks share the same API and UI selection."""
-from tests.helpers.query import conjunction
+from tests.helpers.query import conjunction, filter_in
 import pytest
 
 from tracker import state
@@ -34,8 +34,10 @@ def test_partial_scope_keeps_facts_and_counts_only_actual_failures(snapshot, tmp
         if failed:
             assert response['items'][0]['monitors']['fixture']['check']['status'] == 'partial'
     result = client.get('/api/ui/packages', params={**dict(conjunction({'check:' + 'fixture': 'failed'}).parameters()) ,'monitor': 'fixture', 'section': 'coverage'}).json()
-    choices = result['controls']['navigation'][0]['choices']
-    assert next(c['count'] for c in choices if c['label'] == 'CheckFailed') == int(failed)
+    choices = next(group['choices'] for group in result['controls']['choice_rows'] if group['label'] == 'Checks')
+    assert next(c['count'] for c in choices if c['label'] == 'Partial evidence') == 1
+    alias, = [choice for choice in result['controls']['active'] if choice['label'] == 'Fixture: Failed checks']
+    assert filter_in(alias['href']).selections == {}
     checks = next(s for s in client.get('/api/ui/packages/binutils').json()['sections'] if s['id'] == 'checks')
     row = next(row for row in checks['table']['rows'] if row['id'] == 'check-fixture')
     if failed:
@@ -69,6 +71,6 @@ def test_partial_enrichment_is_failed_not_an_empty_success(snapshot, tmp_path):
     client, _ = client_for(snapshot, tmp_path)
     result = client.get('/api/v2/packages', params={**dict(conjunction({'check:' + 'fixture': 'failed'}).parameters()) ,'monitor': 'fixture', 'section': 'coverage'}).json()
     assert result['total'] == result['check_groups']['failed'] == 1
-    assert result['check_statuses'] == {'partial': 1, 'pending': 0}
+    assert result['check_statuses'] == {'partial': 1, 'pending': 4}
     check = result['items'][0]['monitors']['fixture']['check']
     assert check['failures'] == ['Auxiliary provider timed out']

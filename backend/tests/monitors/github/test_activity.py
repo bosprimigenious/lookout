@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.helpers.query import query_url
 from tracker import state, storage
 from tracker.monitors.github.collector import collect, normalize, synchronize
 from tracker.monitors.github.model import Matcher, Repository, Settings, settings
@@ -199,8 +200,11 @@ def test_projection_and_api(snapshot, tmp_path, monkeypatch):
     with ProjectedClient(create_app(db)) as client:
         result = client.get('/api/v2/packages/foo3').json()
         assert result['monitors']['github']['data']['labels'][0]['count'] == 45
-        listing = client.get('/api/ui/packages?Issue=AND').json()
+        response = client.get(query_url('/api/ui/packages', {'maintenance': 'Issue'}))
+        assert response.status_code == 200, response.text
+        listing = response.json()
         assert listing['total'] == 1
+        assert [row['key'] for row in listing['table']['rows']] == ['foo3']
         counter = next(v for v in listing['table']['rows'][0]['cells'][0]['lines'][0]
                        if v['icon'] == 'issue-opened')
         assert counter['text'] == '45'

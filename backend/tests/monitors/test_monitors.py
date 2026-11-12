@@ -127,10 +127,23 @@ def test_new_monitor_uses_existing_runner_projection_and_api(config, snapshot, m
     db = tmp_path / "state.db"
     state.commit(db, snapshot)
     client = ProjectedClient(create_app(db))
-    out = client.get(query_url('/api/v2/packages', {'maintenance': 'NewSignal'})).json()
+    response = client.get(query_url('/api/v2/packages', {'maintenance': 'NewSignal'}))
+    assert response.status_code == 200
+    out = response.json()
     assert out["total"] == 1 and out["items"][0]["name"] == "binutils"
-    assert {k: v for k, v in out["maintenance_labels"].items() if v} == {"NewSignal": 1, "Outdated": 1}
-    detail = client.get("/api/v2/packages/binutils").json()
+    expected = {'NewSignal': {'binutils'}, 'Outdated': {'binutils', 'foo4'},
+                'Untracked': {'unknown', 'untracked'}}
+    assert {k: v for k, v in out['maintenance_labels'].items() if v} == {
+        label: len(names) for label, names in expected.items()}
+    for label, names in expected.items():
+        response = client.get(query_url('/api/v2/packages', {'maintenance': label}))
+        assert response.status_code == 200
+        alternative = response.json()
+        assert alternative['total'] == out['maintenance_labels'][label]
+        assert {row['name'] for row in alternative['items']} == names
+    response = client.get('/api/v2/packages/binutils')
+    assert response.status_code == 200
+    detail = response.json()
     assert detail["monitors"]["newsignal"]["data"]["findings"][0]["title"] == "New observation"
 
 
@@ -343,18 +356,34 @@ def test_facets_follow_search_other_filter_and_view_not_pagination(snapshot, tmp
     db = tmp_path / "state.db"
     state.commit(db, snapshot)
     client = ProjectedClient(create_app(db))
-    out = client.get(query_url('/api/v2/packages', {'maintenance': 'EOL', 'buildsystem': 'cmake'}, per_page='1', page='2')).json()
+    def listing(filters, **parameters):
+        response = client.get(query_url('/api/v2/packages', filters, **parameters))
+        assert response.status_code == 200
+        return response.json()
+
+    filters = {'maintenance': 'EOL', 'buildsystem': 'cmake'}
+    out = listing(filters, per_page='1', page='2')
     assert out["total"] == 1 and out["items"][0]["name"] == "binutils"
-    assert {k: v for k, v in out["maintenance_labels"].items() if v} == {"EOL": 1, "Outdated": 1}
-    assert out["buildsystems"]["cmake"] == 1 and out["buildsystems"]["meson"] == 0
+    assert {k: v for k, v in out['maintenance_labels'].items() if v} == {'EOL': 1, 'Outdated': 1, 'Advisory': 1}
+    assert out['buildsystems']['cmake'] == out['buildsystems']['meson'] == 1
     assert out["counts"]["all"] == out["counts"]["updates"] == 1 and out["counts"]["problems"] == 0
-    out = client.get(query_url('/api/v2/packages', {'buildsystem': 'cmake', 'view': 'updates'})).json()
+    assert {row['name'] for row in listing({**filters, 'maintenance': 'Advisory'})['items']} == {'foo3'}
+    assert {row['name'] for row in listing({**filters, 'buildsystem': 'meson'})['items']} == {'foo4'}
+    union = {**filters, 'buildsystem': ['cmake', 'meson']}
+    first, second = (listing(union, per_page='1', page=str(page)) for page in (1, 2))
+    assert first['total'] == second['total'] == 2
+    assert [row['name'] for row in first['items'] + second['items']] == ['binutils', 'foo4']
+    for key in ('maintenance_labels', 'buildsystems', 'counts'):
+        assert first[key] == second[key]
+    out = listing({'buildsystem': 'cmake', 'view': 'updates'})
     assert {k: v for k, v in out["maintenance_labels"].items() if v} == {"EOL": 1, "Outdated": 1}
     assert out["counts"]["all"] == out["total"] == 1
-    out = client.get(query_url('/api/v2/packages', {'maintenance': 'EOL', 'buildsystem': 'cmake'}, q='foo')).json()
+    out = listing(filters, q='foo')
     assert out["total"] == 0
-    assert not any(out["maintenance_labels"].values())
-    assert not any(out["buildsystems"].values())
+    assert {k: v for k, v in out['maintenance_labels'].items() if v} == {'Advisory': 1}
+    assert {k: v for k, v in out['buildsystems'].items() if v} == {'meson': 1}
+    assert [row['name'] for row in listing({**filters, 'maintenance': 'Advisory'}, q='foo')['items']] == ['foo3']
+    assert [row['name'] for row in listing({**filters, 'buildsystem': 'meson'}, q='foo')['items']] == ['foo4']
     assert all(v == 0 for v in out["counts"].values())
 
 

@@ -41,7 +41,7 @@ def module(pkg, kind):
 
 
 def buildsystem(value, links):
-    return text(value, kind='tag', variant='solid', appearance='buildsystem:' + value,
+    return text(value, kind='tag', size='small', appearance='buildsystem:' + value,
                 href=links.condition('buildsystem', value))
 
 
@@ -117,6 +117,11 @@ def version_value(pkg, *, compact=True, links=None):
                  else 'Update available')
         current = [*current, text('→', title=title), *candidate]
     return current + annotations
+
+
+def check_diagnostics(check):
+    return list(dict.fromkeys(message for message in
+        [check.get('error'), *check.get('failures', []), check.get('note')] if message))
 
 
 def check_value(check):

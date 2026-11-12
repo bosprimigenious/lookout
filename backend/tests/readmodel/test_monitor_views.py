@@ -109,5 +109,6 @@ def test_monitor_focus_does_not_change_other_filter_dimensions(snapshot, tmp_pat
     for mid in ('source', 'version', 'build', 'external'):
         focused = api.get(query_url('/api/v2/packages', {'maintenance': 'Signal'}, monitor=mid)).json()
         assert [row['name'] for row in focused['items']] == ['binutils']
-        for key in ('total', 'counts', 'buildsystems', 'build_statuses', 'maintenance_labels'):
+        for key in ('total', 'counts', 'buildsystems', 'build_statuses'):
             assert focused[key] == original[key]
+        assert focused['maintenance_labels']['Signal'] == original['maintenance_labels']['Signal']

@@ -85,8 +85,10 @@ def test_explicit_source_ui_link_is_coverage_without_a_fake_results_mode(client)
     hidden = {item['name']: item['value'] for item in document['controls']['hidden']}
     assert set(hidden) <= {'per_page'}
     choices = [choice for nav in document['controls']['navigation'] for choice in nav['choices']]
-    assert [(choice['label'], choice['count']) for choice in choices] == [
-        ('Coverage', 1), ('Uncovered', 0), ('CheckFailed', 0)]
+    assert [(choice['label'], choice['count']) for choice in choices] == [('Coverage', 1)]
+    checks = next(group for group in document['controls']['choice_rows'] if group['label'] == 'Checks')
+    assert checks['selection']
+    assert [(choice['label'], choice['count']) for choice in checks['choices']] == [('Checked', 1)]
 
 
 def test_source_v2_fields_and_detail_provenance_remain_available(client):
@@ -138,16 +140,13 @@ def test_context_role_follows_kind_instead_of_hard_coded_source_id(prepared):
     assert any(row.key == 'package_context' for row in checks.table.rows)
 
 
-def test_empty_unselected_menus_are_not_all_only_controls(prepared):
+def test_no_issue_controls_are_shown_without_findings_or_selections(prepared):
     payload = listing_payload(prepared)
     payload.update(buildsystems={}, maintenance_labels={},
                    build_statuses={target['id']: [] for target in payload['targets']})
     page = presentation_pages.listing(payload, {})
     assert not page.controls.active
-    choices = {c.label: c.count for c in page.controls.choice_rows[0].choices}
-    assert {'Outdated', 'Untracked', 'DepChanges', 'DepMismatch', 'Advisory', 'LicenseDiff', 'Yanked', 'EOL', 'CheckFailed'} <= choices.keys()
-    assert choices['Advisory'] == choices['DepMismatch'] == choices['LicenseDiff'] == 0
-    assert not any(row.icon for row in page.controls.choice_rows)
+    assert not page.controls.choice_rows
 
 
 def test_selected_zero_count_menus_remain_visible_and_removable(prepared):
@@ -158,20 +157,10 @@ def test_selected_zero_count_menus_remain_visible_and_removable(prepared):
     payload['build_statuses'][target] = [{'value': 'failed', 'label': 'CheckFailed', 'count': 0}]
     query = {'filters': conjunction({'buildsystem': 'fixture-system', 'maintenance': 'FixtureSignal', 'build:' + target: 'failed'}).model_dump()}
     page = presentation_pages.listing(payload, query)
-    controls = page.controls
-    selectors = [row for row in [*controls.choice_rows,
-        *[menu for column in page.table.columns[1:] for menu in column.navigation]]
-        if any(choice.selected for choice in row.choices)]
-    assert len(selectors) == 2
-    sidebar, = presentation_navigation.global_navigation(payload, presentation_navigation.Links(query))
-    assert sidebar.label == 'BuildSystem'
-    assert [(c.label, c.count) for c in sidebar.choices if c.selected] == [('fixture-system', 0)]
-    assert len(controls.editor.groups[0].conditions) == 3
-    assert ('buildsystem', 'fixture-system') not in terms_in(controls.editor.groups[0].conditions[0].href)
-    for facet in selectors:
-        selected = [option for option in facet.choices if option.selected]
-        assert len(selected) == 1 and selected[0].count == 0
-        assert any(len(terms_in(chip.href)) == 2 for chip in controls.editor.groups[0].conditions)
+    choice = page.table.columns[3].navigation[0].choices[0]
+    assert choice.selected and choice.count == 0
+    assert 'build:' + target not in dict(terms_in(choice.href))
+    assert ('maintenance', 'FixtureSignal') in terms_in(choice.href)
 
 
 def evidence_result(scopes):
@@ -290,6 +279,7 @@ def test_aggregate_columns_and_target_filters_share_the_query(client):
         assert menu['label'] == column['title']
         for choice in menu['choices']:
             selected = client.get('/api/ui/packages' + '?' + urlsplit(choice['href']).query).json()
+            assert not choice['selected']
             assert selected['total'] == choice['count']
     assert not any(row['label'] in [column['title'] for column in doc['table']['columns'][3:]]
                    for row in doc['controls']['choice_rows'])

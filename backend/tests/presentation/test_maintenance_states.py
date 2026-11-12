@@ -34,7 +34,7 @@ def values(row, column):
 def test_version_labels_follow_the_same_selection_in_their_own_columns(client):
     page = document(client, {})
     rows = {row['key']: row for row in page['table']['rows']}
-    for view, label, column in [('updates', 'Outdated', 0), ('untracked', 'Untracked', 2)]:
+    for view, label, column in [('untracked', 'Untracked', 2)]:
         selected = {row['key'] for row in document(client, dict(conjunction({'view': view}).parameters()))['table']['rows']}
         tagged = {name for name, row in rows.items() if any(v['text'] == label for v in values(row, column))}
         assert selected == tagged
@@ -45,7 +45,7 @@ def test_version_labels_follow_the_same_selection_in_their_own_columns(client):
     for row in rows.values():
         identity, = row['cells'][0]['lines']
         assert identity[0]['text'] == row['key']
-        systems = [i for i, value in enumerate(identity) if value['variant'] == 'solid']
+        systems = [i for i, value in enumerate(identity) if value['size'] == 'small']
         assert not systems or systems == [1]
 
 
@@ -60,14 +60,14 @@ def test_errors_aggregate_packages_and_link_to_the_failed_check(client):
             assert badge['href'] == '/packages/foo3#check-version'
             assert not any(v['text'] == 'CheckFailed' for v in values(row, 0))
         else:
-            assert terms_in(badge['href']) == []
+            assert badge['href'].startswith('/packages/' + row['key'] + '#check-')
         detail = client.get('/api/ui/packages/' + row['key']).json()
         checks = next(section for section in detail['sections'] if section['id'] == 'checks')
         selected, = [item for item in checks['table']['rows']
                       if any(v['text'] == 'CheckFailed' for v in values(item, 1))]
         assert any(v['text'] == 'CheckFailed' for v in values(selected, 1))
         assert any('Fixture' in v['text'] for v in values(selected, 1))
-    assert document(client, dict(conjunction({'maintenance': 'CheckFailed', 'view': 'updates'}).parameters()))['total'] == 1
+    assert document(client, conjunction({'maintenance': 'CheckFailed', 'view': 'updates'}).parameters())['total'] == 1
 
 
 def test_version_issue_counts_and_row_links_have_one_authority(client):
@@ -76,12 +76,17 @@ def test_version_issue_counts_and_row_links_have_one_authority(client):
         filtered = client.get('/api/v2/packages', params=dict(conjunction({'maintenance': label}).parameters())).json()
         assert version_view['items'] == filtered['items']
         page = document(client, dict(conjunction({'maintenance': label}).parameters()))
-        choices = page['controls']['choice_rows'][0]['choices']
-        assert len(choices) == len({c['label'] for c in choices})
-        assert next(c for c in choices if c['label'] == label)['count'] == page['total']
-        for row in page['table']['rows']:
-            tag = next(v for v in values(row, column) if v['text'] == label)
-            assert terms_in(tag['href']) == []
+        assert filtered['maintenance_labels'][label] == page['total']
+        if label == 'Outdated':
+            choice = next(choice for group in page['controls']['choice_rows']
+                          for choice in group['choices'] if choice['label'] == label)
+            assert choice['count'] == page['total'] and choice['selected']
+            assert all(v['text'] != 'Outdated' for row in page['table']['rows'] for v in values(row, 0))
+        else:
+            for row in page['table']['rows']:
+                tag = next(v for v in values(row, column) if v['text'] == label)
+                assert terms_in(tag['href']) == [('maintenance', label)]
+
 
 
 @pytest.mark.parametrize('status', ['ok', 'pending', 'unsupported', 'not_configured',
@@ -114,7 +119,7 @@ def test_multiple_failed_monitors_count_once_and_checks_keep_each_error(snapshot
     page = document(client, dict(conjunction({'maintenance': 'CheckFailed'}).parameters()))
     assert page['total'] == 1
     badge, = [v for v in values(page['table']['rows'][0], 0) if v['text'] == 'CheckFailed']
-    assert terms_in(badge['href']) == []
+    assert badge['href'] == '/packages/foo3#check-build'
     detail = client.get('/api/ui/packages/foo3').json()
     checks = next(s for s in detail['sections'] if s['id'] == 'checks')['table']['rows']
     errors = [row for row in checks if any(v['text'] == 'CheckFailed' for v in values(row, 1))]

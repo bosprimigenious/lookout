@@ -48,7 +48,7 @@ def test_group_aliases_preserve_exact_check_states(snapshot, tmp_path, status):
         result = client.get(query_url('/api/v2/packages', {'check:fixture': group}, monitor='fixture', section='coverage', q='binutils')).json()
         assert result['section'] == 'coverage'
         assert result['total'] == int(status in accepted)
-        assert {k: v for k, v in result['check_statuses'].items() if v} == ({status: 1} if status in accepted else {})
+        assert {k: v for k, v in result['check_statuses'].items() if v} == {status: 1}
         assert not {'uncovered', 'failed'} & result['check_statuses'].keys()
         assert all(row['monitors']['fixture']['check']['status'] == status
                    for row in result['items'])
@@ -95,7 +95,7 @@ def test_check_groups_use_the_same_intersections_as_rows(config):
             result = index.select(filters=conjunction({'buildsystem': system, 'maintenance': label, **{'build:' + target: value for target, value in ({first_target: build}).items()}, 'check:' + monitor: group}), monitor=monitor, query=query, page=1, per_page=2)
             assert result['total'] == len(expected)
             assert [row['name'] for row in result['items']] == expected[:2]
-            assert result['check_statuses'] == {status: sum(f[monitor] == status and f[monitor] in accepted for f in context) for status in STATUSES}
+            assert result['check_statuses'] == {status: sum(f[monitor] == status for f in context) for status in STATUSES}
             assert sum(result['check_statuses'].get(status, 0) for status in accepted) == result['total']
             if len(expected) > 2:
                 later = index.select(filters=conjunction({'buildsystem': system, 'maintenance': label, **{'build:' + target: value for target, value in ({first_target: build}).items()}, 'check:' + monitor: group}), monitor=monitor, query=query, page=2, per_page=2)
@@ -108,36 +108,28 @@ def test_failed_build_is_not_a_failed_monitor_check(snapshot, tmp_path):
     client = client_for(snapshot, tmp_path)
     failed = client.get(query_url('/api/v2/packages', {'check:build': 'failed'}, monitor='build', section='coverage')).json()
     assert failed['total'] == 0
-    assert failed['check_statuses'] == {'ok': 0}
+    assert failed['check_statuses'] == {'ok': len(snapshot['sources'])}
     problems = client.get(query_url('/api/v2/packages', {'build:rva20': 'failed'}, monitor='build')).json()
     assert problems['total'] > 0
     assert all(row['monitors']['build']['check']['status'] == 'ok' for row in problems['items'])
 
 
 @pytest.mark.parametrize('monitor', ['source', 'version', 'build', 'alpha', 'beta', 'requires'])
-@pytest.mark.parametrize('logic', ['and', 'or'])
-def test_navigation_counts_distinguish_results_from_candidates(snapshot, tmp_path, monitor, logic):
-    from tracker.readmodel.query import FilterQuery, Group, Condition
+def test_navigation_counts_match_their_destination(snapshot, tmp_path, monitor):
     snapshot['monitor_catalog'] = {'alpha': {'title': 'First'}, 'beta': {'title': 'Second'}, 'requires': {'title': 'RuntimeDeps'}}
     snapshot['monitors'] = {name: {mid: observed(snapshot, name, status)
         for mid in ('alpha', 'beta', 'requires')} for name, status in
         zip(snapshot['sources'], ('not_configured', 'error', 'unsupported', 'ok', 'not_applicable'))}
     client = client_for(snapshot, tmp_path)
-    query = FilterQuery(groups=(Group(logic=logic, conditions=(Condition(dimension='build:rva20', value='failed'),)),))
-    response = client.get('/api/ui/packages', params={'monitor': monitor, 'section': 'coverage', **dict(query.parameters()), 'next_logic': logic})
+    response = client.get(query_url('/api/ui/packages', {'build:rva20': 'failed'}, monitor=monitor, section='coverage'))
     assert response.status_code == 200, response.text
-    page = response.json()
-    choices = [c for n in page['controls']['navigation'] for c in n['choices']]
-    assert {'Uncovered', 'CheckFailed'} <= {c['label'] for c in choices}
+    controls = response.json()['controls']
+    choices = [choice for group in (*controls['navigation'], *controls['choice_rows'])
+               for choice in group['choices']]
     for choice in choices:
         destination = client.get('/api/ui/packages?' + urlsplit(choice['href']).query)
         assert destination.status_code == 200, destination.text
-        expected = destination.json()['total']
-        candidate_query = filter_in(choice['href'])
-        if candidate_query != query:
-            expected = (expected - page['total'] if logic == 'or' else
-                        page['total'] - expected if logic == 'not' else expected)
-        assert choice['count'] == expected, choice
+        assert choice['count'] == destination.json()['total']
 
 
 def test_checks_keep_exact_status_in_rows_and_detail(snapshot, tmp_path):
@@ -151,12 +143,11 @@ def test_checks_keep_exact_status_in_rows_and_detail(snapshot, tmp_path):
     assert page['title'] == 'Fixture'
     assert 'Partial evidence' not in str(page['table']['rows'])
     assert page['table']['rows'][0]['cells'][1]['lines'][0][0]['text'] == snapshot['sources']['binutils']['version']
-    status_chip, = page['controls']['editor']['groups'][0]['conditions']
-    assert status_chip['label'] == 'Fixture: Partial evidence'
-    destination = parse_qs(urlsplit(status_chip['href']).query)
-    assert 'check' not in destination and destination['monitor'] == ['fixture']
+    reset = page['controls']['reset']
+    destination = parse_qs(urlsplit(reset).query)
+    assert 'select' not in destination and destination['monitor'] == ['fixture']
     assert destination['q'] == ['binutils']
-    assert client.get('/api/ui/packages?' + urlsplit(status_chip['href']).query).json()['total'] == 1
+    assert client.get('/api/ui/packages?' + urlsplit(reset).query).json()['total'] == 1
     detail = client.get('/api/ui/packages/binutils').json()
     checks = next(section for section in detail['sections'] if section['id'] == 'checks')
     assert 'Partial evidence' in str(checks)

@@ -41,10 +41,10 @@ def test_unknown_and_changes_do_not_imply_unmet():
     index = PackageList(dimension_rows(), TARGETS)
     unmet = select(index, requires='unmet')
     assert [row['name'] for row in unmet['items']] == ['pkg-a', 'pkg-d', 'pkg-e']
-    assert unmet['requires_counts'] == {'all': 3, 'changes': 1, 'unknown': 0, 'unmet': 3}
+    assert unmet['requires_counts'] == {'all': 3, 'changes': 2, 'unknown': 1, 'unmet': 3}
     assert [row['name'] for row in select(index, requires='changes')['items']] == ['pkg-a', 'pkg-b']
-    # Adding either condition to the other computes the same intersection.
-    assert select(index, requires='changes')['requires_counts']['unmet'] == unmet['requires_counts']['changes']
+    # Counts ignore their own facet so alternatives remain available.
+    assert select(index, requires='changes')['requires_counts']['unmet'] == 3
 
 
 def test_requires_results_and_coverage_preserve_their_other_selections():
@@ -54,11 +54,11 @@ def test_requires_results_and_coverage_preserve_their_other_selections():
     assert results['requires_counts']['all'] == 3
     coverage = select(index, requires='unmet', check='ok')
     assert (coverage['total'], coverage['result_count'], coverage['coverage_count']) == (2, 2, 2)
-    assert {k: v for k, v in coverage['check_statuses'].items() if v} == {'ok': 2}
-    assert coverage['requires_counts'] == {'all': 2, 'changes': 1, 'unknown': 0, 'unmet': 2}
+    assert {k: v for k, v in coverage['check_statuses'].items() if v} == {'ok': 2, 'error': 1}
+    assert coverage['requires_counts'] == {'all': 2, 'changes': 2, 'unknown': 0, 'unmet': 2}
     empty = select(index, requires='unmet', query='pkg-b')
     assert empty['total'] == 0
-    assert empty['requires_counts'] == {'all': 0, 'changes': 0, 'unknown': 0, 'unmet': 0}
+    assert empty['requires_counts'] == {'all': 0, 'changes': 1, 'unknown': 0, 'unmet': 0}
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def test_requires_filter_is_validated_only_on_monitored_api(linked_client):
     assert response.status_code == 200
     result = response.json()
     assert [item['name'] for item in result['items']] == ['binutils', 'untracked']
-    assert result['requires_counts'] == {'all': 2, 'changes': 1, 'unknown': 0, 'unmet': 2}
+    assert result['requires_counts'] == {'all': 2, 'changes': 2, 'unknown': 1, 'unmet': 2}
     for path in ('/api/v2/packages', '/api/ui/packages'):
         assert linked_client.get(path + '?requires=unknown').status_code == 422
         assert linked_client.get(path + '?requires=invalid').status_code == 422
@@ -103,4 +103,6 @@ def test_requires_filter_is_validated_only_on_monitored_api(linked_client):
 def test_requires_navigation_is_not_added_to_other_monitors(linked_client):
     for query in ('', 'monitor=build', 'monitor=version'):
         document = linked_client.get('/api/ui/packages?' + query).json()
-        assert not any(nav['label'] == 'Dependencies' for nav in document['controls']['navigation'])
+        controls = document['controls']
+        assert not any(nav['label'] == 'Dependencies'
+                       for nav in (*controls['navigation'], *controls['choice_rows']))

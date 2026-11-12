@@ -1,7 +1,7 @@
 ---
 import Base from '../../layouts/Base.astro';
 const evidence = '/api/v2/packages?monitor=security&search=observations&q=CVE-&include=security&detail=full&per_page=20';
-const groupedURL = '/api/v2/packages?rva23_failed=AND&rva23_unresolvable=OR&Group=AND&Advisory=AND&DepMismatch=AND';
+const filteredURL = '/api/v2/packages?select=build:rva23=failed&select=build:rva23=unresolvable&select=maintenance=Advisory';
 const batch = '/api/v2/packages:batchGet?names=bash&names=openssl&include=version&include=security';
 ---
 <Base title="API">
@@ -33,24 +33,16 @@ const batch = '/api/v2/packages:batchGet?names=bash&names=openssl&include=versio
         (default: all). IDs come from the list response's <code>monitors</code>.</li>
       <li><code>q</code> searches names. <code>search=observations</code> adds fact values,
         restricted by <code>monitor</code> when set. Matching uses case-insensitive substrings.</li>
-      <li>Ordinary search: <code>?Outdated&amp;Yanked</code>. Conditions intersect.
-        States of the same build target and BuildSystems form unions:
-        <code>?rva23_failed+rva23_succeeded&amp;Yanked</code>,
-        <code>?buildsystem_cmake+buildsystem_pyproject</code>.</li>
-      <li>Advanced Search: <code>?Outdated=AND&amp;Advisory=OR&amp;EOL=NOT</code>.
-        Operations run left to right from ALL. <code>Group=AND|OR|NOT</code>
-        seals the preceding ungrouped conditions. Each group starts from ALL and cannot nest.
-        <code>advanced=1</code> opens the editor without conditions. Do not mix bare flags and operators.</li>
-      <li>Ordinary counts show intersections. Alternatives within a selected build target or BuildSystem count additions under the other conditions.
-        Advanced Search uses <code>next_logic=and|or|not</code> (default: and): AND counts matches, OR counts additions, NOT counts removals.
-        The operator affects counts, not current results. Each package counts once within the search and focused view.
-        Check counts target coverage.</li>
+      <li>Repeat <code>select=FACET=VALUE</code>. Values within a facet form a union. Different facets intersect.</li>
+      <li>Omit a facet to leave it unrestricted. Empty values are invalid.</li>
+      <li><code>maintenance</code> selects findings such as <code>Advisory</code> or <code>DepMismatch</code>.
+        Collection status uses separate <code>check:MONITOR</code> facets.</li>
+      <li>Counts apply the search text and all other facets. Results count each package once.</li>
     </ul>
-    <p><a href={groupedURL}>Build alternatives intersected with two alerts</a>:</p>
-    <pre><code>{groupedURL}</code></pre>
-    <p>Use <code>dimension/value</code> for other predicates, such as
-      <code>check:security/error</code>. The response includes the normalized query and
-      <code>query_node_limit</code>: conditions plus explicit or implicit union groups.
+    <p><a href={filteredURL}>Build alternatives intersected with advisory matches</a>:</p>
+    <pre><code>{filteredURL}</code></pre>
+    <p>Use <code>select=check:security=error</code> for a collection-check predicate. The response includes the normalized query and
+      <code>query_node_limit</code>: the maximum number of selected values.
       Raw repeated conditions count before deduplication. Invalid or oversized queries return 422.</p>
     <p>Find advisory evidence:</p>
     <pre><code><a href={evidence}>{evidence}</a></code></pre>

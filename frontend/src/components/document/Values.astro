@@ -10,6 +10,6 @@ const {values} = Astro.props;
   return <Tag href={href} title={value.title || undefined} aria-label={value.aria_label || undefined}
     class:list={['value', `value-${value.kind}`, `tone-${value.tone}`]}
     datetime={value.datetime || undefined}
-    data-variant={value.kind === 'tag' ? value.variant : undefined}
+    data-size={value.size === 'small' ? 'small' : undefined}
     data-appearance={value.appearance ? encodeURIComponent(value.appearance) : undefined}>{value.icon && <Icon name={value.icon}/>}{value.kind === 'icon' && value.icon ? <span class="visually-hidden">{value.text}</span> : value.text}</Tag>;
 })}

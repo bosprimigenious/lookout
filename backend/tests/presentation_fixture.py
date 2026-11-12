@@ -49,7 +49,8 @@ elif operation == 'list':
                 if any(r['changed'] for r in data['requirements']):
                     dims.append('changes')
                 dimensions.update({'requires': dims, 'findings:' + mid: ['yes'] if data['requirements'] else [],
-                                   'maintenance': ['DepMismatch'] if 'unmet' in dims else []})
+                                   'maintenance': (['DepMismatch'] if 'unmet' in dims else []) +
+                                       (['DepChanges'] if 'changes' in dims else [])})
             elif data['kind'] == 'version':
                 dimensions['version_signal'] = [a['monitor'] for a in data['annotations']]
                 if not data['track']:
@@ -60,7 +61,7 @@ elif operation == 'list':
     focus = next((m for m in payload['monitors'] if m['id'] == filters.monitor), None)
     section = 'coverage' if focus and focus['kind'] == 'source' else filters.section
     selection = PackageList(packages, payload['targets']).select(query=filters.q,
-        filters=filters.filters, next_logic=filters.next_logic, page=filters.page, per_page=filters.per_page,
+        filters=filters.filters, page=filters.page, per_page=filters.per_page,
         monitor=filters.monitor, findings_only=bool(focus and focus['kind'] in ('evidence', 'requires') and section == 'results'))
     result = presentation_pages.listing({**payload, **selection, 'section': section,
         'monitor_coverage': PackageList(packages, payload['targets']).monitor_coverage()},

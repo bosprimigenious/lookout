@@ -114,7 +114,8 @@ def test_unspecified_version_is_omitted_only_from_unchanged_list_summary():
     assert 'any version' in [value.text for value in presentation_requires.requirement_values(item)]
 
 
-def test_mixed_dependency_preview_orders_runtime_before_build_and_keeps_detail_evidence():
+@pytest.mark.parametrize('selection', [{'version_signal': ['requires']}, {'maintenance': ['DepChanges']}])
+def test_mixed_dependency_preview_orders_runtime_before_build_and_keeps_detail_evidence(selection):
     target = dict(expression='>=3', source='Registry', url='https://example.org/target')
     items = result(changed(kind='build', name='Compiler', target=target, changed=True,
                            target_satisfaction='unsatisfied'),
@@ -123,8 +124,7 @@ def test_mixed_dependency_preview_orders_runtime_before_build_and_keeps_detail_e
     lines = presentation_requires.requires_preview({'detail_url': '/packages/fixture'}, items, links)
     assert [[v.text for v in line] for line in lines] == [
         ['RuntimeDeps:', 'Library', '>=1', '✓', '→', '>=3', '✗']]
-    selected = presentation_navigation.Links({'filters': {'tail': [
-        {'dimension': 'version_signal', 'value': 'requires'}]}})
+    selected = presentation_navigation.Links({'filters': {'selections': selection}})
     lines = presentation_requires.requires_preview({'detail_url': '/packages/fixture'}, items, selected)
     assert [[v.text for v in line] for line in lines] == [
         ['RuntimeDeps:', 'Library', '>=1', '✓', '→', '>=3', '✗'],

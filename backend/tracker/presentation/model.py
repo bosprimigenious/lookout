@@ -8,8 +8,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, model_validator
 from pydantic import Field as Constraint
 
-from tracker.readmodel.query import MAX_QUERY_NODES, FilterQuery
-
 
 class DocumentModel(BaseModel):
     model_config = ConfigDict(extra='forbid', json_schema_serialization_defaults_required=True)
@@ -21,7 +19,7 @@ class Text(DocumentModel):
     title: str | None = None
     aria_label: str | None = None
     kind: Literal['text', 'code', 'tag', 'time', 'icon'] = 'text'
-    variant: Literal['outline', 'solid'] = 'outline'
+    size: Literal['normal', 'small'] = 'normal'
     tone: Literal['normal', 'muted', 'positive', 'negative', 'notice'] = 'normal'
     appearance: str | None = None
     datetime: str | None = None
@@ -44,6 +42,7 @@ class Choice(DocumentModel):
 class Navigation(DocumentModel):
     label: str
     show_label: bool = True
+    selection: bool = False
     icon: str | None = None
     choices: list[Choice]
 
@@ -111,32 +110,8 @@ class Parameter(DocumentModel):
     value: str
 
 
-class FilterCondition(Choice):
-    logic: str
-
-
-class FilterGroup(DocumentModel):
-    id: int
-    closed: bool
-    palette: Literal[0, 1, 2, 3] | None
-    logic: str
-    conditions: list[FilterCondition]
-    clear: str | None
-
-
-class FilterEditor(DocumentModel):
-    query: FilterQuery
-    advanced: Choice
-    node_count: int
-    node_limit: int = MAX_QUERY_NODES
-    groups: list[FilterGroup]
-    operators: list[Choice]
-    group: str | None
-    clear: str
-
-
 class Controls(DocumentModel):
-    editor: FilterEditor
+    reset: str
     action: str = '/'
     query: str = ''
     hidden: list[Parameter] = []

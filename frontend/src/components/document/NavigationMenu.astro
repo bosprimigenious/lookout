@@ -3,8 +3,11 @@ import type {Navigation} from '../../lib/document';
 import Links from './Navigation.astro';
 interface Props {title: string; menus: Navigation[]; id: string}
 const {title, menus, id} = Astro.props;
+const selected = menus.filter(menu => menu.selection)
+  .flatMap(menu => menu.choices.filter(choice => choice.selected).map(choice => choice.label));
+const label = `Filter ${title}${selected.length ? `: ${selected.join(', ')}` : ''}`;
 ---
-<button type="button" class="navigation-menu-trigger" popovertarget={id} aria-label={`Filter ${title}`}>
+<button type="button" class:list={["navigation-menu-trigger", {"has-selection": selected.length > 0}]} popovertarget={id} aria-label={label}>
   {title} <span aria-hidden="true">▾</span>
 </button>
 <div id={id} popover="auto" class="navigation-menu">

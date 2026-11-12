@@ -16,10 +16,12 @@ import logos from '../assets/logos/catalog.json';
       <dt>Builds</dt>
       <dd>Results belong to individual OBS targets. Success does not confirm delivery of the current source. A different last-successful version remains visible.</dd>
       <dt>Labels and checks</dt>
-      <dd>CheckFailed means collection failed, not the build. Package details show evidence and failed checks.</dd>
+      <dd>Labels describe observed findings. Data status shows collection failures and coverage. CheckFailed means collection failed, not the build. Package details show the reasons.</dd>
       <dt>Time and scope</dt>
       <dd>Collection and build timestamps differ. Failed checks can retain older observations. Advisory matches do not account for local patches.</dd>
     </dl>
+
+    <p>No selection shows all packages. Selections form a union within each area and intersect across areas. Counts apply the search text and the other areas.</p>
 
     <h2>Data sources</h2>
     <dl class="api-list">

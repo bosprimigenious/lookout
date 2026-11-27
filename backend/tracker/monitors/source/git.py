@@ -102,10 +102,18 @@ def _git_text(args, git='git', timeout: float = 300):
 
 def _git_bytes(args, git='git', timeout=60):
     """Run git and capture raw bytes stdout (for blob content), or None on failure."""
+    deadline = time.monotonic() + timeout
     try:
-        p = subprocess.run([git, *args], capture_output=True, timeout=timeout, check=False)
-        return p.stdout if p.returncode == 0 else None
-    except (subprocess.TimeoutExpired, OSError):
+        size = subprocess.run([git, *args[:-2], '-s', args[-1]], capture_output=True,
+                              timeout=timeout, check=False)
+        if size.returncode != 0 or not 0 <= int(size.stdout.strip()) <= _SIZE_LIMIT:
+            return None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        p = subprocess.run([git, *args], capture_output=True, timeout=remaining, check=False)
+        return p.stdout if p.returncode == 0 and len(p.stdout) <= _SIZE_LIMIT else None
+    except (subprocess.TimeoutExpired, OSError, ValueError):
         return None
 
 

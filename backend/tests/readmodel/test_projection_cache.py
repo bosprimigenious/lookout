@@ -294,3 +294,33 @@ def test_component_only_snapshot_projects_without_targets(tmp_path):
     cache = ProjectionCache(db)
     cache._refresh()
     assert not cache.read()[1].rows
+
+
+@pytest.mark.parametrize('failures', [1, 2])
+@pytest.mark.parametrize('advance', [0, 1])
+def test_failed_clock_rewind_retries_without_database_change(tmp_path, config, monkeypatch, failures, advance):
+    client, _, _, clock, _ = setup_cache(tmp_path, config, monkeypatch)
+    clock[0] = NOW + timedelta(seconds=101)
+    assert get(client)['monitors']['version']['data']['stale']
+    cache = client.app.state.projection
+    project = view.project_monitors
+    attempts = 0
+
+    def interrupted(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts <= failures:
+            raise RuntimeError('projection interrupted')
+        return project(*args, **kwargs)
+
+    monkeypatch.setattr(view, 'project_monitors', interrupted)
+    clock[0] = NOW + timedelta(seconds=90)
+    for _ in range(failures):
+        cache.refresh()
+        assert cache.read()[2]['projection_notice']
+        assert cache.read()[1].by_name['binutils']['monitors']['version']['data']['stale']
+        clock[0] += timedelta(seconds=advance)
+    cache.refresh()
+    assert attempts == failures + 1
+    assert not cache.read()[1].by_name['binutils']['monitors']['version']['data']['stale']
+    assert not cache.read()[2].get('projection_notice')

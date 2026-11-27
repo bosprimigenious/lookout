@@ -82,7 +82,6 @@ class ProjectionCache:
         signature = (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_ctime_ns, st.st_size)
         expired = old is None or (old.deadline is not None and now >= old.deadline)
         backwards = self._last_seen is not None and now < self._last_seen
-        self._last_seen = now
         changed = old is None or signature != old.signature
         clock_only = False
         if changed:
@@ -121,6 +120,9 @@ class ProjectionCache:
         else:
             with self._publishing:
                 self._error = None
+
+        # Failed refreshes must retain the previous clock invalidation boundary.
+        self._last_seen = now
 
     def _read(self):
         """Borrow one complete projection; callers must not mutate its contents.

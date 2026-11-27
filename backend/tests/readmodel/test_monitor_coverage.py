@@ -1,4 +1,4 @@
-from tests.helpers.query import conjunction, filter_in, query_url
+from tests.helpers.query import conjunction, query_url
 from itertools import product
 from urllib.parse import parse_qs, urlsplit
 

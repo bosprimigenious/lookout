@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.deployment.test_upgrade import deployment, simulate, module, NEW, OLD, operations
+from tests.deployment.test_upgrade import simulate, module, NEW, OLD, operations
 
 worker = module('release-upgrade')
 launcher = module('upgrade')

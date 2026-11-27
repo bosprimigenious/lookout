@@ -47,11 +47,10 @@ observation time. It records the error and attempt time. Invalid shared macros r
 the whole batch.
 
 SPEC invalidation compares the old and new Git trees, including merge resolutions.
-Changelogs are display history, not cache keys. Reads use a pinned commit; cached
+Changelogs are display history, not cache keys. Reads use a pinned commit. Cached
 metadata requires matching SPEC bytes, macro and auxiliary-input identities, and
-resolver version. The immutable image's installed RPM versions, system macro files
-and parser code also identify the runtime. Checkpoints from the old history-based selector trigger one full
-reconciliation.
+resolver version. Installed RPM versions, system macro files and parser code identify
+the immutable runtime. A changed selector or runtime identity requires a full SPEC pass.
 
 If Git fetch fails, Lookout can retry parsing the confirmed local revision. This does
 not advance the remote observation time or clear the fetch error. Source check failures
@@ -154,7 +153,8 @@ The process-local HTML cache uses document content, URL and cookies as its key.
 It stores at most 64 pages and 8 MiB of body/key/header bytes. Errors cannot reuse cached success.
 Restarting clears the cache. Changed application assets require full navigation.
 The browser disables response scripts and dynamic evaluation.
-Activity pages read counts and cursor pages from one snapshot, initially showing 20 records per kind.
+Each activity response reads one snapshot and defaults to 20 records per kind.
+Cursors bind subsequent pages to that history revision.
 Loading more pauses replacement until navigation resumes. Provider bodies and diffs are never rendered as HTML.
 
 ## Observation identity and time

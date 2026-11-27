@@ -348,7 +348,7 @@ class MonitoredList(BaseModel):
     pages: int
     filters: FilterQuery
     query_node_limit: int = MAX_QUERY_NODES
-    counts: dict[str, int]
+    counts: dict[str, int] = Field(description='View alternative counts; all aliases the selected result total.')
     targets: list[Target]
     collection: Collection
     presentation: Presentation

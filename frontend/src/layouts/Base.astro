@@ -8,6 +8,8 @@ import type {Section} from '../lib/document';
 interface Props {title?: string; result?: object; dataStatus?: Section | null}
 const siteName = 'openRuyi Lookout';
 const {title, result, dataStatus} = Astro.props;
+const presentationURL = Astro.locals.presentationRevision
+  ? `/presentation.css?revision=${Astro.locals.presentationRevision}` : '/presentation.css';
 
 // Cookie-backed themes also work when scripting is disabled.
 // No cookie means follow the system preference, which the CSS handles on its own.
@@ -32,7 +34,7 @@ const fingerprint = result && createHash('sha256')
     <meta name="color-scheme" content="light dark"/>
     <title>{title ? `${title} · ${siteName}` : siteName}</title>
     <link rel="icon" type="image/svg+xml" href="/openruyi.svg"/>
-    <link rel="stylesheet" href="/presentation.css"/>
+    <link rel="stylesheet" href={presentationURL}/>
   </head>
   <body hx-boost={result ? 'true' : undefined} hx-target="#page" hx-select="#page"
     hx-swap="outerHTML show:none" hx-sync="body:replace" hx-push-url="true">

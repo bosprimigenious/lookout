@@ -459,3 +459,28 @@ def test_repeated_reference_keeps_first_caption_without_rebuilding(monkeypatch):
     monkeypatch.setattr(presentation_evidence, 'text', counted)
     assert presentation_evidence.fact_fields([first, *([later] * 100)]) == expected
     assert len(calls) == 1
+
+
+def test_page_theme_revision_changes_without_observation_changes(snapshot, tmp_path):
+    snapshot['presentation'] = {'buildsystems': {'custom': {'background': '#123456'}}}
+    client, db = client_for(snapshot, tmp_path)
+    paths = ('/api/ui/packages', '/api/ui/packages/binutils')
+    before = [client.get(path).json() for path in paths]
+    revision = client.get('/api/ui/theme').json()['revision']
+    assert all(document['theme_revision'] == revision for document in before)
+    snapshot['presentation']['buildsystems']['custom']['background'] = '#654321'
+    state.commit(db, snapshot, previous=state.read_cached(db))
+    after = [client.get(path).json() for path in paths]
+    newer = client.get('/api/ui/theme').json()['revision']
+    assert newer != revision
+    assert all(document['theme_revision'] == newer for document in after)
+    for old, new in zip(before, after):
+        old.pop('theme_revision')
+        new.pop('theme_revision')
+        assert old == new
+
+
+def test_theme_revision_depends_only_on_emitted_palette():
+    first = {'buildsystems': {'a': {'background': '#123456'}, 'b': {'background': '#654321'}}}
+    reordered = {'buildsystems': {'b': {'background': '#654321'}, 'a': {'background': '#123456', 'icon': 'rust'}}}
+    assert presentation_pages.theme(first) == presentation_pages.theme(reordered)

@@ -121,6 +121,7 @@ class Controls(DocumentModel):
 
 
 class ListingDocument(DocumentModel):
+    theme_revision: str = ''
     schema_version: Literal[1] = 1
     title: str
     navigation: Navigation
@@ -136,6 +137,7 @@ class ListingDocument(DocumentModel):
 
 
 class DetailDocument(DocumentModel):
+    theme_revision: str = ''
     schema_version: Literal[1] = 1
     title: str
     subtitle: str | None = None
@@ -153,4 +155,5 @@ class Palette(DocumentModel):
 
 
 class DocumentTheme(DocumentModel):
+    revision: str
     appearances: dict[str, Palette] = {}

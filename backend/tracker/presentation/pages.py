@@ -1,4 +1,7 @@
 """Pages for reading documents; no collection or persistence."""
+import hashlib
+import json
+
 from tracker.monitors.issues import Issue
 from tracker.monitors.model import check_failed
 from tracker.presentation.activity import open_links
@@ -106,7 +109,7 @@ def listing(payload, query):
         pagination.append(Choice(label='Next', href=links.to(page=payload['page'] + 1)))
     meta = [] if focus else collection_meta(payload['collection'])
     notices = ['Test fixture — not live openRuyi data.'] if payload['collection']['mode'] == 'fixture' else []
-    return ListingDocument(title=title, navigation=navigation, controls=controls,
+    return ListingDocument(theme_revision=theme(payload.get('presentation', {}))['revision'], title=title, navigation=navigation, controls=controls,
         table=table, total=payload['total'], page=payload['page'],
         pages=payload['pages'], pagination=pagination, meta=meta,
         data_status=data_status(payload['collection'], payload.get('monitor_coverage', {}), payload['monitors']),
@@ -183,7 +186,7 @@ def _result_row(pkg, descriptors, aggregate, links):
     return Row(key=pkg['name'], cells=cells, notes=notes)
 
 
-def detail(pkg, collection=None):
+def detail(pkg, collection=None, *, presentation=None):
     links = Links()
     source = module(pkg, 'source')
     data = source['data'] if source else {}
@@ -235,10 +238,12 @@ def detail(pkg, collection=None):
     context = []
     sections.append(Section(id='checks', title='Checks', collapsible=True, table=Table(label='Collection checks', columns=[
         Column(title='Monitor'), Column(title='Observation'), Column(title='Last checked')], rows=checks)))
-    return DetailDocument(title=pkg['name'], subtitle=meta.get('summary'), identity=identity,
+    return DetailDocument(theme_revision=theme(presentation or {})['revision'], title=pkg['name'], subtitle=meta.get('summary'), identity=identity,
                           links=shortcuts, context=context, sections=sections)
 
 
 def theme(presentation):
-    return {'appearances': {**palettes(), **{'buildsystem:' + key: colors
-            for key, value in presentation.get('buildsystems', {}).items() if (colors := tag_palette(value['background'])) is not None}}}
+    appearances = {**palettes(), **{'buildsystem:' + key: colors
+            for key, value in presentation.get('buildsystems', {}).items() if (colors := tag_palette(value['background'])) is not None}}
+    revision = hashlib.sha256(json.dumps(appearances, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return {'appearances': appearances, 'revision': revision}

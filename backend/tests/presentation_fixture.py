@@ -23,7 +23,7 @@ for package in packages:
             monitor['data']['requirements'] = [RequirementAssessment.model_validate(item).model_dump()
                                                for item in monitor['data']['requirements']]
 if operation == 'detail':
-    result = presentation_pages.detail(request['payload']).model_dump()
+    result = presentation_pages.detail(request['payload'], presentation=request['payload'].get('presentation')).model_dump()
 elif operation == 'list':
     payload = request['payload']
     for package in packages:

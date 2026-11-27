@@ -276,7 +276,7 @@ const mock = createServer((req, res) => {
   const section = url.searchParams.get('section') || 'results';
   const payload = url.pathname === '/api/ui/theme'
     ? {buildsystems: appearancePalette}
-    : selected ? monitored(selected) : {
+    : selected ? {...monitored(selected), presentation: {buildsystems: appearancePalette}} : {
       monitors: catalog, section, presentation: {buildsystems: appearancePalette},
       items: packages.map(pkg => monitored(pkg, true, focus)),
       targets,
@@ -619,12 +619,21 @@ try {
   assert.doesNotMatch(listing, /9\.9-shared/);
   assert.match(row('failed'), /tone-negative/);
   assert.match(row('failed'), /href="\/packages\/failed#check-version"/);
-  const presentationCSS = await read('/presentation.css');
+  const stylesheet = html => String(html).match(/href="(\/presentation[.]css[^"]*)"/)[1];
+  const palettePage = await wire('/');
+  const originalStylesheet = stylesheet(palettePage.body);
+  assert.match(originalStylesheet, /[?]revision=[a-f0-9]{64}$/);
+  const presentationCSS = await read(originalStylesheet);
   assert.match(presentationCSS, /\[data-appearance="buildsystem%3Acustom"\]\{--appearance-background:#123456;--appearance-foreground:#ffffff\}/);
   assert.doesNotMatch(presentationCSS, /\.value-tag|\.document-nav/, 'one palette authority serves every document role');
   appearancePalette = {custom: {background: '#654321', foreground: '#eeeeee'},
     'unsafe\"}body{color:red}': {background: '#123456;display:none', foreground: '#ffffff'}};
-  const changedPaletteCSS = await read('/presentation.css');
+  const changedPalettePage = await wire('/', {'If-None-Match': palettePage.headers.etag});
+  assert.equal(changedPalettePage.status, 200, 'palette changes invalidate cached HTML');
+  const changedStylesheet = stylesheet(changedPalettePage.body);
+  assert.notEqual(changedStylesheet, originalStylesheet);
+  assert.equal(stylesheet(await read('/packages/success')), changedStylesheet);
+  const changedPaletteCSS = await read(changedStylesheet);
   assert.match(changedPaletteCSS, /--appearance-background:#654321;--appearance-foreground:#ffffff/);
   assert.doesNotMatch(changedPaletteCSS, /unsafe|body|display|#123456/);
   for (const icon of ['rust', 'waf']) {

@@ -83,6 +83,11 @@ export interface components {
         /** DetailDocument */
         DetailDocument: {
             /**
+             * Theme Revision
+             * @default
+             */
+            theme_revision: string;
+            /**
              * Schema Version
              * @default 1
              * @constant
@@ -118,6 +123,8 @@ export interface components {
         };
         /** DocumentTheme */
         DocumentTheme: {
+            /** Revision */
+            revision: string;
             /**
              * Appearances
              * @default {}
@@ -152,6 +159,11 @@ export interface components {
         };
         /** ListingDocument */
         ListingDocument: {
+            /**
+             * Theme Revision
+             * @default
+             */
+            theme_revision: string;
             /**
              * Schema Version
              * @default 1

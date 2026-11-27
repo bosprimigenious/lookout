@@ -1,7 +1,7 @@
 import {defineMiddleware} from 'astro:middleware';
 import {createHash} from 'node:crypto';
 import {api} from './lib/api';
-import type {DetailDocument, ListingDocument} from './lib/document';
+import type {DetailDocument, DocumentTheme, ListingDocument} from './lib/document';
 import {RenderCache, notModified} from './lib/render-cache.mjs';
 
 // Byte and entry bounds cover both large pages and many tiny search results.
@@ -15,6 +15,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
       context.locals.detail = await api<DetailDocument>('/api/ui/packages/' + encodeURIComponent(context.params.name));
     }
     const document = context.locals.listing || context.locals.detail;
+    if (document?.data) context.locals.presentationRevision = document.data.theme_revision;
+    else if (context.url.pathname.startsWith('/packages/')) {
+      // Standalone history pages return a Section, not a full reading document.
+      const colors = await api<DocumentTheme>('/api/ui/theme');
+      context.locals.presentationRevision = colors.data?.revision;
+    }
     // Hash the actual document, not generation: freshness and notices can change
     // without a database write. URL and cookies also affect the rendered page.
     if (document?.status === 200 && document.data) {

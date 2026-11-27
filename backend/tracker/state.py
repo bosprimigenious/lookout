@@ -102,8 +102,8 @@ def commit(db, snapshot, *, previous=None):
     Concurrent writers must hold writer_lock across read/merge/commit; a transaction
     alone cannot prevent overwriting a newer snapshot with old input.
     Each payload write gets a new storage revision, even if generation is unchanged.
-    ``previous`` is an unmodified read_cached result; its storage revision and
-    heartbeat are checked before skipping serialization of equal observations.
+    ``previous`` supplies the expected storage revision and heartbeat. Payloads
+    are compared with database digests, never with mutable caller-owned objects.
     """
     return storage.commit(db, snapshot, previous=previous)
 

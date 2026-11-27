@@ -145,7 +145,7 @@ def test_migration_rolls_back_ddl_and_rows_on_failure(tmp_path, snapshot, monkey
     assert db.read_bytes() == original
 
 
-def test_incremental_commit_encodes_only_changed_record_and_header(tmp_path, snapshot, monkeypatch):
+def test_incremental_commit_checks_all_payloads_but_writes_only_changed_record(tmp_path, snapshot, monkeypatch):
     db = tmp_path / 'db'
     state.commit(db, snapshot)
     previous = state.read_cached(db)
@@ -157,7 +157,7 @@ def test_incremental_commit_encodes_only_changed_record_and_header(tmp_path, sna
         return encode(value)
     monkeypatch.setattr(storage, 'encode', record)
     result = state.commit(db, changed, previous=previous)
-    assert result['changed_records'] == 1 and len(encoded) == 2
+    assert result['changed_records'] == 1 and len(encoded) == len(rows(db)) + 1
     assert state.read(db) == changed
 
 
@@ -213,3 +213,15 @@ def test_string_enum_values_round_trip(tmp_path):
     db = tmp_path / 'db'
     state.commit(db, snapshot)
     assert state.read(db) == snapshot
+
+
+@pytest.mark.parametrize('shared', [False, True])
+def test_mutated_read_base_does_not_drop_updates(tmp_path, shared):
+    db = tmp_path / 'db'
+    state.commit(db, {**state.empty(), 'tracks': {'widget': {'version': '1'}}})
+    previous = state.read_cached(db)
+    changed = dict(previous[0]) if shared else previous[0]
+    changed['tracks']['widget']['version'] = '2'
+    result = state.commit(db, changed, previous=previous)
+    assert result['changed_records'] == 1
+    assert state.read(db)['tracks']['widget']['version'] == '2'

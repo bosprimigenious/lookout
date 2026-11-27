@@ -53,7 +53,7 @@ def validate_json(value):
         raise ValueError('snapshot contains a non-finite number')
 
 
-def pack(snapshot, previous=None):
+def pack(snapshot):
     validate(snapshot)
     try:
         validate_json(snapshot)
@@ -68,19 +68,16 @@ def pack(snapshot, previous=None):
         if not isinstance(values, dict):
             raise ValueError('snapshot collection is not a mapping: ' + section)
         sections[section] = []
-        prior = (previous or {}).get(section, {})
         for subject, value in values.items():
             if depth == 1:
-                records[section, subject, ''] = None if subject in prior and value == prior[subject] else encode(value)
+                records[section, subject, ''] = encode(value)
             else:
                 if not isinstance(value, dict):
                     raise ValueError('snapshot subject is not a mapping: ' + section)
                 if not value:
                     sections[section].append(subject)
                 for slot, observation in value.items():
-                    old = prior.get(subject, {})
-                    records[section, subject, slot] = (None if slot in old and observation == old[slot]
-                                                      else encode(observation))
+                    records[section, subject, slot] = encode(observation)
     header = encode(dict(storage=FORMAT, snapshot=metadata, sections=sections))
     return header, records
 
@@ -109,13 +106,11 @@ def _preserve_clock(conn, records, snapshot):
     if (('components', 'builds', '') not in builds
             or any(fact.get('error') or any(fact.get(k) != stamp for k in stamps) for fact in builds.values())):
         return None
-    if all(records[key] is None for key in builds):
-        return stamp
     for section, subject, slot, payload in conn.execute(
             "SELECT section, subject, slot, payload FROM snapshot_records "
             "WHERE section='builds' OR (section='components' AND subject='builds')"):
         key = section, subject, slot
-        if key in builds and records[key] is not None:
+        if key in builds:
             old = json.loads(payload)
             if {k: v for k, v in old.items() if k not in stamps} == {
                     k: v for k, v in builds[key].items() if k not in stamps}:
@@ -150,7 +145,7 @@ def _write(conn, header, records, snapshot):
 
 
 def commit(db, snapshot, *, previous=None):
-    header, records = pack(snapshot, previous[0] if previous else None)
+    header, records = pack(snapshot)
     db = Path(db)
     db.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(db, timeout=10)) as conn:

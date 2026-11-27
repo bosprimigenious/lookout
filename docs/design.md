@@ -64,7 +64,7 @@ SQLite stores source, track, SPEC, build and monitor observations as keyed rows.
 GitHub collection separately owns `github_items`, `github_links` and repository checkpoints.
 Its records do not use version-monitor invalidation.
 Transactions write changed rows, deletions and the snapshot header. Equal rows retain
-their storage revision without JSON re-encoding. Storage rejects incremental commits unless their base database revision and heartbeat still match. `state.read_cached` captures header, clock and row revisions in one transaction,
+their storage revision. Payload digests are compared with SQLite rows, not mutable caller objects. Storage rejects incremental commits unless their base database revision and heartbeat still match. `state.read_cached` captures header, clock and row revisions in one transaction,
 then decodes changed JSON outside the lock. Borrowed unchanged data is read-only.
 
 A complete successful OBS poll with identical facts updates `snapshot_clock`, not

@@ -1,4 +1,5 @@
 """Facet selections: union within each facet, intersection between facets."""
+from copy import copy
 from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -102,6 +103,15 @@ class Evaluation:
         for i in range(len(dimensions) - 1, -1, -1):
             self.facet_scopes[dimensions[i]] = prefixes[i] & suffix
             suffix &= operands[i]
+
+    def restrict(self, scope):
+        """Intersect an additional scope without repeating the selected unions."""
+        result = copy(self)
+        result.scope = self.scope.intersection(scope)
+        result.matches = self.matches.intersection(scope)
+        result.facet_scopes = {dimension: members.intersection(scope)
+                               for dimension, members in self.facet_scopes.items()}
+        return result
 
     def count(self, condition):
         members = self.index.get(condition.dimension, {}).get(condition.value, ())

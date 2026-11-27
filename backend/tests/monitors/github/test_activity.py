@@ -727,3 +727,39 @@ def test_activity_conflict_exposes_restart_in_existing_ui_primitives(snapshot, t
         section = response.json()
         assert section['more'] is None
         assert section['entries'][0]['heading'][1]['href'] == '/packages/foo3/activity?kind=issue'
+
+
+@pytest.mark.parametrize('field,value', [
+    ('body', 'revised internal body'), ('paths', ['SPECS/foo3/new.spec']),
+    ('base', 'new-base'), ('internal_cache', 'new-cache-value'),
+])
+def test_history_cursor_ignores_unexposed_fields(snapshot, field, value):
+    populated(snapshot, count=3)
+    first = activity.page(snapshot, 'foo3', 'issue', per_page=1)
+    public = activity.page(snapshot, 'foo3', 'issue', per_page=50)['items']
+    snapshot['github_items'][REPO]['1'][field] = value
+    assert activity.page(snapshot, 'foo3', 'issue', per_page=50)['items'] == public
+    second = activity.page(snapshot, 'foo3', 'issue', first['next_cursor'], per_page=1)
+    assert second['items'][0]['id'] != first['items'][0]['id']
+
+
+@pytest.mark.parametrize('field,value', [
+    ('title', 'new title'), ('status', 'closed'), ('author', 'new author'),
+    ('url', 'https://github.com/owner/packages/issues/999'),
+    ('updated_at', '2026-02-01T12:00:00+00:00'),
+    ('available', False), ('paths_complete', False),
+])
+def test_history_cursor_rejects_public_record_changes(snapshot, field, value):
+    populated(snapshot, count=3)
+    first = activity.page(snapshot, 'foo3', 'issue', per_page=1)
+    snapshot['github_items'][REPO]['1'][field] = value
+    with pytest.raises(activity.ActivityChanged):
+        activity.page(snapshot, 'foo3', 'issue', first['next_cursor'], per_page=1)
+
+
+def test_history_cursor_rejects_association_changes(snapshot):
+    populated(snapshot, count=3)
+    first = activity.page(snapshot, 'foo3', 'issue', per_page=1)
+    snapshot['github_links']['foo3']['1']['evidence'] = [{'kind': 'title', 'value': 'foo3'}]
+    with pytest.raises(activity.ActivityChanged):
+        activity.page(snapshot, 'foo3', 'issue', first['next_cursor'], per_page=1)

@@ -17,6 +17,16 @@ def linked(snapshot, name):
                 yield item, link['evidence']
 
 
+# The cursor and response share the same public history projection.
+_FIELDS = ('id', 'repository', 'number', 'kind', 'title', 'url', 'status', 'updated_at',
+           'available', 'paths_complete', 'author')
+
+
+def _public_record(item, evidence):
+    return {**{key: item.get(key) if key == 'author' else item[key] for key in _FIELDS},
+            'association': evidence}
+
+
 def order(item):
     return datetime.fromisoformat(item['updated_at']).timestamp(), item['repository'], item['id']
 
@@ -29,7 +39,7 @@ def revision(snapshot, name, kind):
     digest = hashlib.sha256()
     for item, evidence in linked(snapshot, name):
         if item['kind'] == kind:
-            digest.update(json.dumps([item, evidence], sort_keys=True,
+            digest.update(json.dumps(_public_record(item, evidence), sort_keys=True,
                                      separators=(',', ':')).encode())
             digest.update(b'\n')
     return digest.hexdigest()
@@ -68,15 +78,11 @@ def page(snapshot, name, kind, cursor=None, per_page=20):
 
     # One lookahead determines whether another page exists; retain only page-sized state.
     window = nlargest(per_page + 1, candidates(), key=lambda entry: entry[0])
-    selected = [dict(item, association=evidence) for _, item, evidence in window[:per_page]]
+    selected = [_public_record(item, evidence) for _, item, evidence in window[:per_page]]
     next_cursor = None
     if len(window) > per_page:
         next_cursor = base64.urlsafe_b64encode(json.dumps([name, kind, *order(selected[-1]), version]).encode()).decode()
-    # Bodies and changed-file lists are indexed server-side, not repeated in history responses.
-    fields = ('id', 'repository', 'number', 'kind', 'title', 'url', 'status', 'updated_at',
-              'available', 'paths_complete', 'association', 'author')
-    return {'items': [{key: item.get(key) if key == 'author' else item[key] for key in fields} for item in selected],
-            'total': total, 'next_cursor': next_cursor}
+    return {'items': selected, 'total': total, 'next_cursor': next_cursor}
 
 
 def project(context):

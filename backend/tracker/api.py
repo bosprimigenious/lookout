@@ -583,6 +583,8 @@ def create_app(db=None):
         find_package(name, index)
         try:
             return activity.page(snap, name, kind, cursor, per_page)
+        except activity.ActivityChanged as error:
+            raise HTTPException(409, str(error)) from None
         except ValueError as error:
             raise HTTPException(422, str(error)) from None
 
@@ -593,7 +595,13 @@ def create_app(db=None):
 
     @app.get('/api/ui/packages/{name}/activity', response_model=Section)
     def activity_document(name: str, kind: Literal['pr', 'issue'], cursor: str | None = None):
-        return activity_presentation.section(name, kind, activity_history(name, kind, cursor, 20))
+        try:
+            history = activity_history(name, kind, cursor, 20)
+        except HTTPException as error:
+            if error.status_code != 409:
+                raise
+            return activity_presentation.restart(name, kind)
+        return activity_presentation.section(name, kind, history)
 
     @app.get('/api/ui/theme', response_model=DocumentTheme)
     def document_theme():

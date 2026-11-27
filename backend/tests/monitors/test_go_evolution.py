@@ -88,7 +88,7 @@ def test_existing_inputs_reuse_cache_but_new_backend_or_identity_does_not(config
     config['packages']['binutils'] = {'monitors': {'requires': {'go': 'example.org/other'}}}
     changed = runner.plan(config, snapshot, 'binutils', 'requires')
     assert policy.due(saved, changed['fingerprint'], datetime.now(UTC))
-    assert not runner.same_scope(changed, saved, 'current')
+    assert not runner.same_release_inputs(changed, saved, 'current')
 
 
 def test_new_source_version_drops_old_current_and_upgrade_evidence(config, snapshot):
@@ -97,8 +97,8 @@ def test_new_source_version_drops_old_current_and_upgrade_evidence(config, snaps
     setup(config, snapshot, version='1.0.1+patch8', tag='v1.0.1-patch-8')
     new = runner.plan(config, snapshot, 'binutils', 'requires')
     assert old['fingerprint'] != new['fingerprint']
-    assert not runner.same_scope(new, old, 'current')
-    assert not runner.same_scope(new, old, 'upgrade')
+    assert not runner.same_release_inputs(new, old, 'current')
+    assert not runner.same_release_inputs(new, old, 'upgrade')
 
 
 @pytest.mark.parametrize('target,stale,expected', [('1.24', False, 1), ('1.23', False, 0),
@@ -132,8 +132,8 @@ def test_upgrade_change_preserves_only_matching_current_scope(config, snapshot):
                scope_checks={'current': {'status': 'ok'}, 'upgrade': {'status': 'ok'}})
     snapshot['tracks']['binutils']['version'] = '2.0.0'
     new = runner.plan(config, snapshot, 'binutils', 'requires')
-    assert runner.same_scope(new, old, 'current')
-    assert not runner.same_scope(new, old, 'upgrade')
+    assert runner.same_release_inputs(new, old, 'current')
+    assert not runner.same_release_inputs(new, old, 'upgrade')
     retained = runner.failed(new, old, OSError('offline'), state.utcnow())
     assert retained['findings'] == [{'scope': 'current', 'id': 'current'}]
     assert set(retained['scope_checks']) == {'current'}

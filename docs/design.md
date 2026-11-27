@@ -177,6 +177,10 @@ path. The [adapter contract](monitor-porting.md#module-contract) defines scope.
 
 | Field | Meaning |
 |---|---|
+| `subject` | Package and release under observation |
+| `inputs` | Provider identity and settings for the query |
+| `query_fingerprint` | Hash of provider, projected query subject and resolved inputs. Excludes the adapter implementation version |
+| `fingerprint` | Input fingerprint. Includes the query and adapter implementation version |
 | `attempted_at` | Last attempt, including failure |
 | `checked_at` | Oldest HTTP input time, or execution time without HTTP. Cached bytes retain their age. |
 | Scope `checked_at` | Last successful check for that scope. A combined result uses the latest successful scope time |

@@ -118,19 +118,20 @@ def plan(config, snapshot, name, provider, *, version=None):
     fingerprint_inputs = ({'invalid_configuration': repr(configured), 'identity': identity}
                           if input_error else inputs)
     query_subject = current
-    query_key = None
+    query_fingerprint = None
     try:
         select = getattr(adapter, 'query_subject', None)
         if select and inputs is not None and not input_error:
             query_subject = select(current, inputs)
-        query_key = fingerprint({'provider': provider, 'subject': query_subject, 'inputs': fingerprint_inputs})
-        fp = fingerprint({'provider': provider, 'adapter_version': adapter.VERSION,
-                          'subject': query_subject, 'inputs': fingerprint_inputs})
+        query_fingerprint = fingerprint({'provider': provider, 'subject': query_subject, 'inputs': fingerprint_inputs})
+        input_fingerprint = fingerprint({'provider': provider, 'adapter_version': adapter.VERSION,
+                                         'subject': query_subject, 'inputs': fingerprint_inputs})
     except Exception as error:
         status, note, input_error = 'error', 'Monitor query input could not be prepared.', type(error).__name__
-        fp = fingerprint({'provider': provider, 'subject': current, 'inputs': fingerprint_inputs,
-                          'adapter_version': adapter.VERSION, 'query_error': input_error})
-    return {'subject': current, 'scope': scope, 'fingerprint': fp, 'query_fingerprint': query_key, 'inputs': inputs,
+        input_fingerprint = fingerprint({'provider': provider, 'subject': current, 'inputs': fingerprint_inputs,
+                                         'adapter_version': adapter.VERSION, 'query_error': input_error})
+    return {'subject': current, 'scope': scope, 'fingerprint': input_fingerprint,
+            'query_fingerprint': query_fingerprint, 'inputs': inputs,
             'adapter_version': adapter.VERSION,
             'status': status, 'input_status': status, 'note': note, 'findings': [], 'error': input_error}
 
@@ -148,7 +149,7 @@ def evidence_revision(subject, findings):
     return fingerprint({'subject': subject, 'findings': sorted(normalized, key=lambda f: f['id'])})
 
 
-def same_scope(proposed, previous, scope):
+def same_release_inputs(proposed, previous, scope):
     """Match upstream-release scopes only; source revisions are not dependencies here."""
     if (not previous or previous.get('scope') != 'current_and_upgrade'
             or previous.get('adapter_version') != proposed.get('adapter_version')
@@ -160,7 +161,7 @@ def same_scope(proposed, previous, scope):
 
 def retain_current(proposed, previous):
     retained = history.retain(proposed, previous)
-    if proposed['scope'] != 'current_and_upgrade' or not same_scope(proposed, previous, 'current'):
+    if proposed['scope'] != 'current_and_upgrade' or not same_release_inputs(proposed, previous, 'current'):
         return retained
     check = previous.get('scope_checks', {}).get('current')
     if not check:
@@ -185,18 +186,18 @@ def previous_query(provider, proposed, previous):
     select = getattr(adapter, 'query_subject', None)
     try:
         query = select(subject, inputs) if select else subject
-        key = fingerprint({'provider': provider, 'subject': query, 'inputs': inputs})
+        query_fingerprint = fingerprint({'provider': provider, 'subject': query, 'inputs': inputs})
     except (ValueError, TypeError, KeyError):
         return previous
-    saved = {**previous, 'query_fingerprint': key}
-    if (key == proposed.get('query_fingerprint')
+    saved = {**previous, 'query_fingerprint': query_fingerprint}
+    if (query_fingerprint == proposed.get('query_fingerprint')
             and previous.get('adapter_version') == proposed.get('adapter_version')
             and previous.get('scope') == proposed['scope']):
         saved.update(fingerprint=proposed['fingerprint'], subject=proposed['subject'])
     return saved
 
 
-def retain_scopes(output, proposed, previous, at, observed_at=None):
+def retain_scopes(output, proposed, previous, attempted_at, observed_at=None):
     """Failure retains dated evidence for that release only, never refreshes it."""
     expected = {'current'} | ({'upgrade'} if proposed['subject'].get('target_version') else set())
     if set(output['scope_checks']) != expected:
@@ -211,9 +212,9 @@ def retain_scopes(output, proposed, previous, at, observed_at=None):
             validate_url(component['url'])
         if check.get('provides') and check['status'] != 'ok':
             raise ValueError('provided components require a successful release check')
-        old = previous.get('scope_checks', {}).get(scope, {}) if same_scope(proposed, previous, scope) else {}
-        checks[scope] = {**check, 'attempted_at': at,
-                         'checked_at': (observed_at or at) if check['status'] == 'ok' else old.get('checked_at')}
+        old = previous.get('scope_checks', {}).get(scope, {}) if same_release_inputs(proposed, previous, scope) else {}
+        checks[scope] = {**check, 'attempted_at': attempted_at,
+                         'checked_at': (observed_at or attempted_at) if check['status'] == 'ok' else old.get('checked_at')}
         if check['status'] != 'ok' and old:
             findings.extend(f for f in previous.get('findings', []) if f['scope'] == scope)
             if 'provides' in old:
@@ -221,19 +222,19 @@ def retain_scopes(output, proposed, previous, at, observed_at=None):
     return {**output, 'scope_checks': checks, 'findings': findings}
 
 
-def failed(proposed, previous, error, at):
+def failed(proposed, previous, error, attempted_at):
     """A failed policy/check retains only evidence for this exact input."""
     old = previous if previous and previous.get('fingerprint') == proposed['fingerprint'] else {}
-    result = {**proposed, 'status': 'error', 'attempted_at': at,
+    result = {**proposed, 'status': 'error', 'attempted_at': attempted_at,
             'failures': old.get('failures', 0) + 1,
             'checked_at': old.get('checked_at'), 'findings': old.get('findings', []),
             'evidence_revision': old.get('evidence_revision'), 'changed_at': old.get('changed_at'),
             'error': type(error).__name__, 'note': 'Check failed; matching prior findings are retained, not refreshed.'}
     if proposed['scope'] == 'current_and_upgrade':
-        scopes = [scope for scope in ('current', 'upgrade') if same_scope(proposed, previous, scope)]
+        scopes = [scope for scope in ('current', 'upgrade') if same_release_inputs(proposed, previous, scope)]
         result['findings'] = [f for f in (previous or {}).get('findings', []) if f['scope'] in scopes]
         result['scope_checks'] = {scope: {**previous.get('scope_checks', {}).get(scope, {}),
-            'status': 'error', 'note': result['note'], 'attempted_at': at} for scope in scopes}
+            'status': 'error', 'note': result['note'], 'attempted_at': attempted_at} for scope in scopes}
     return history.retain(result, previous) if not old or old.get('last_result') else result
 
 
@@ -250,7 +251,7 @@ def execute(provider, proposed, io, previous=None, *, schedule=None):
         # Source unavailability also gates the upgrade and changes its query.
         # Preserve only matching current evidence, dated and input-unavailable.
         return retain_current(proposed, previous)
-    at = state.utcnow()
+    attempted_at = state.utcnow()
     old = previous if previous and previous.get('fingerprint') == proposed['fingerprint'] else {}
     try:
         policy = schedule or refresh_policy(provider, proposed, old, {})
@@ -261,7 +262,7 @@ def execute(provider, proposed, io, previous=None, *, schedule=None):
         scoped_io = io.for_hosts(REGISTRY[provider].HOSTS, max_age=max_age)
         output = REGISTRY[provider].check(proposed['subject'], proposed['inputs'], scoped_io)
         # Reinterpreting cached bytes is not a new upstream observation.
-        observed_at = getattr(scoped_io, 'observed_at', None) or at
+        observed_at = getattr(scoped_io, 'observed_at', None) or attempted_at
         expected_keys = {'status', 'findings', 'note'}
         combined = proposed['scope'] == 'current_and_upgrade'
         if combined:
@@ -276,7 +277,7 @@ def execute(provider, proposed, io, previous=None, *, schedule=None):
             if f['scope'] == 'upgrade' and f['target_version'] != proposed['subject'].get('target_version'):
                 raise ValueError('monitor finding target mismatch')
         if combined:
-            output = retain_scopes(output, proposed, previous, at, observed_at)
+            output = retain_scopes(output, proposed, previous, attempted_at, observed_at)
         revision_input = {'input_fingerprint': proposed['fingerprint']}
         provides = {scope: sorted(check['provides'], key=fingerprint)
                     for scope, check in output.get('scope_checks', {}).items() if check.get('provides')}
@@ -288,15 +289,15 @@ def execute(provider, proposed, io, previous=None, *, schedule=None):
             output['findings'] = old['findings']
         checked_at = (max((c['checked_at'] for c in output['scope_checks'].values() if c.get('checked_at')), default=None)
                       if combined else observed_at)
-        result = {**proposed, **output, 'attempted_at': at, 'checked_at': checked_at,
+        result = {**proposed, **output, 'attempted_at': attempted_at, 'checked_at': checked_at,
                 'failures': old.get('failures', 0) + 1 if output['status'] in ('partial', 'error') else 0,
                 'evidence_revision': revision,
-                'changed_at': old.get('changed_at') if unchanged else at}
+                'changed_at': old.get('changed_at') if unchanged else attempted_at}
         if output['status'] in ('error', 'partial', 'unsupported'):
             return history.retain(result, previous)
         return result
     except Exception as error:
-        return failed(proposed, previous, error, at)
+        return failed(proposed, previous, error, attempted_at)
 
 
 def check(config, snapshot, name, provider, io):

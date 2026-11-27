@@ -48,7 +48,7 @@ def revision(snapshot, name, kind):
 def page(snapshot, name, kind, cursor=None, per_page=20):
     if kind not in ('pr', 'issue') or not 1 <= per_page <= 50:
         raise ValueError('Activity requires kind=pr|issue and per_page=1..50')
-    version = revision(snapshot, name, kind)
+    history_revision = revision(snapshot, name, kind)
     after = None
     if cursor:
         try:
@@ -62,7 +62,7 @@ def page(snapshot, name, kind, cursor=None, per_page=20):
             after = tuple(decoded[2:5])
         except (ValueError, UnicodeError, TypeError, OverflowError) as error:
             raise ValueError('Invalid activity cursor') from error
-        if decoded[5] != version:
+        if decoded[5] != history_revision:
             raise ActivityChanged('Activity changed; restart pagination without a cursor')
     total = 0
 
@@ -81,7 +81,7 @@ def page(snapshot, name, kind, cursor=None, per_page=20):
     selected = [_public_record(item, evidence) for _, item, evidence in window[:per_page]]
     next_cursor = None
     if len(window) > per_page:
-        next_cursor = base64.urlsafe_b64encode(json.dumps([name, kind, *order(selected[-1]), version]).encode()).decode()
+        next_cursor = base64.urlsafe_b64encode(json.dumps([name, kind, *order(selected[-1]), history_revision]).encode()).decode()
     return {'items': selected, 'total': total, 'next_cursor': next_cursor}
 
 

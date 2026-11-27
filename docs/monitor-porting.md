@@ -65,8 +65,8 @@ The overall status can also be `error`. Findings identify their scope and
 target. Successful current results survive a failed target check. Unsupported
 metadata does not become a transport failure.
 
-Combined scope is for exact upstream releases. `runner.same_scope` matches adapter
-revision, resolved inputs and release versions, **not** source revision. Checks
+Combined scope is for exact upstream releases. `runner.same_release_inputs` matches the adapter implementation version,
+resolved inputs and release versions, **not** source revision. Checks
 sensitive to local patches must retain source context and use a single scope.
 
 ### Facts

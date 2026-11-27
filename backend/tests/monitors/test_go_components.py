@@ -96,7 +96,7 @@ def test_version_and_archive_changes_invalidate_saved_query(config, snapshot, tm
     source['metadata']['sources'][0]['url'] = ROOT + 'a/v1.1.0.tar.gz'
     after = runner.plan(config, snapshot, 'binutils', 'requires')
     assert after['fingerprint'] != before['fingerprint']
-    assert not runner.same_scope(after, before, 'current')
+    assert not runner.same_release_inputs(after, before, 'current')
     source['metadata_error'] = 'retained metadata'
     assert runner.plan(config, snapshot, 'binutils', 'requires')['status'] == 'error'
 

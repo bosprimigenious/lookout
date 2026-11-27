@@ -514,6 +514,10 @@ Reboot and different-image upgrade acceptance remain separate operator checks.
 
 ## Publish a release
 
+Release notes list commits since the previous stable tag, grouped by type, with
+commit links and a full diff. `cliff.toml` controls the categories and format.
+
+
 In GitHub Actions, select **Release → Run workflow**, choose `main`, and select
 `patch` (default), `minor`, or `major`. Use `patch` for compatible fixes,
 `minor` for features, and `major` for a new major version.

@@ -1,0 +1,36 @@
+[changelog]
+header = ""
+body = """
+{%- set url = get_env(name="RELEASE_REPOSITORY_URL") -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+## {{ group }}
+{% for commit in commits -%}
+- {% if commit.breaking %}**Breaking:** {% endif %}{% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | split(pat="\n") | first }} ([{{ commit.id | truncate(length=7, end="") }}]({{ url }}/commit/{{ commit.id }}))
+{% endfor %}
+{% endfor %}
+{% if previous.version %}
+[Full diff]({{ url }}/compare/{{ previous.version }}...{{ version }})
+{% endif -%}
+"""
+trim = true
+postprocessors = [
+    { pattern = '\A\s+', replace = "" },
+    { pattern = '\n{3,}', replace = "\n\n" },
+]
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+filter_commits = false
+tag_pattern = '^v[0-9]+\.[0-9]+\.[0-9]+$'
+sort_commits = "oldest"
+commit_parsers = [
+    { message = "^feat", group = "Features" },
+    { message = "^fix", group = "Fixes" },
+    { message = "^perf", group = "Performance" },
+    { message = "^refactor", group = "Refactoring" },
+    { message = "^docs", group = "Documentation" },
+    { message = "^test", group = "Tests" },
+    { message = "^(build|ci|chore)", group = "Maintenance" },
+    { message = ".*", group = "Other" },
+]

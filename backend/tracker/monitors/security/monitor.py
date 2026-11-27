@@ -17,7 +17,7 @@ __all__ = ['TITLE', 'VERSION', 'HOSTS', 'inputs', 'check', 'refresh', 'query_sub
 
 
 TITLE = Issue.ADVISORY
-VERSION = 7
+VERSION = 8
 HOSTS = {"api.osv.dev", "services.nvd.nist.gov", "www.cisa.gov", "api.first.org"}
 CVE = re.compile(r"CVE-\d{4}-\d{4,}")
 
@@ -96,12 +96,16 @@ def osv(subject, settings, io):
     entries, token, seen = [], None, set()
     for _ in range(20):
         response = io.json('POST', 'https://api.osv.dev/v1/query', {**request, **({'page_token': token} if token else {})})
-        for item in response.get('vulns', []):
+        if not isinstance(response, dict):
+            raise ValueError('OSV returned an invalid query response')
+        rows, token = response.get('vulns', []), response.get('next_page_token')
+        if not isinstance(rows, list) or token is not None and not isinstance(token, str):
+            raise ValueError('OSV returned invalid results or pagination')
+        for item in rows:
             if 'affected' not in item:
                 item = io.json('GET', 'https://api.osv.dev/v1/vulns/' + quote(item['id'], safe=''))
             if not item.get('withdrawn'):
                 entries.append(item)
-        token = response.get('next_page_token')
         if not token:
             return entries
         if token in seen:

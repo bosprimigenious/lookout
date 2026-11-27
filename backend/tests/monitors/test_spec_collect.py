@@ -156,7 +156,7 @@ def test_macro_failure_retains_prior_evidence_and_success_times(config, tmp_path
         'head': 'old-head', 'metadata': {'version': '1.0'}, 'changelog': [cl('old-head')]}, 'old-time')
     old['components']['spec_git'] = state.success({}, {'head': 'old-head'}, 'old-time')
     db = tmp_path / 'snapshot.db'
-    state.commit(db, old)
+    state.commit(db, old, previous=state.read_cached(db))
     monkeypatch.setattr(spec_git, 'fetch', lambda *_a, **_kw: (True, None))
     monkeypatch.setattr(spec_git, 'head', lambda *_a, **_kw: ('new-head', None))
     monkeypatch.setattr(spec_git, 'packages', lambda *_a, **_kw: (['bash'], None))
@@ -194,7 +194,7 @@ def test_macro_admission_failure_retains_the_entire_batch(config, tmp_path, monk
     old['specs'] = {'bash': state.success({}, {'metadata': {'version': '1'}}, 'old-time')}
     old['components']['spec_git'] = state.success({}, {'head': 'old-head'}, 'old-time')
     db = tmp_path / 'snapshot.db'
-    state.commit(db, old)
+    state.commit(db, old, previous=state.read_cached(db))
     monkeypatch.setattr(spec_git, 'fetch', lambda *a, **k: (True, None))
     monkeypatch.setattr(spec_git, 'head', lambda *a, **k: ('new-head', None))
     monkeypatch.setattr(spec_git, 'packages', lambda *a, **k: (['bash', 'gcc'], None))

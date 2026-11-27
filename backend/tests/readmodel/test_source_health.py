@@ -27,7 +27,7 @@ def source_snapshot():
 
 def source_client(tmp_path, snapshot):
     database = tmp_path / 'state.sqlite3'
-    state.commit(database, snapshot)
+    state.commit(database, snapshot, previous=state.read_cached(database))
     return ProjectedClient(create_app(database))
 
 

@@ -28,7 +28,7 @@ def test_identical_build_poll_keeps_payload_revision_and_projection(config, snap
             pass
     monkeypatch.setattr(collector.obs, 'Client', Client)
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     first = collector.collect_builds(config, db)
     def stored():
         with sqlite3.connect(db) as conn:
@@ -57,7 +57,7 @@ def test_identical_build_poll_keeps_payload_revision_and_projection(config, snap
     assert len(calls) == 2
     # Ordinary commits consume the clock atomically and invalidate the content cache.
     second['builds']['binutils']['rva23']['raw_status'] = 'building'
-    state.commit(db, second)
+    state.commit(db, second, previous=state.read_cached(db))
     assert stored()[1] != original[1]
     assert client.get('/api/v2/packages/binutils').json()['monitors']['build']['data']['targets'][0]['raw_status'] == 'building'
 
@@ -76,7 +76,7 @@ def test_clock_only_freshness_change_reprojects_rows_and_facets(
             fact.update(fetched_at=old_stamp, attempted_at=old_stamp)
     snapshot['components']['builds'] = state.success({}, {}, old_stamp)
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     revision = state.read_cached(db)[1]
     monkeypatch.setattr(read_model, 'time', SimpleNamespace(time=lambda: now.timestamp()))
     calls = []
@@ -91,7 +91,7 @@ def test_clock_only_freshness_change_reprojects_rows_and_facets(
     for targets in patches.values():
         for fact in targets.values():
             fact.update(fetched_at=stamp, attempted_at=stamp)
-    assert state.commit_build_heartbeat(db, snapshot, patches, state.success(snapshot['components']['builds'], {}, stamp))
+    assert state.commit_build_heartbeat(db, snapshot, patches, state.success(snapshot['components']['builds'], {}, stamp), revision=state.read_cached(db)[1])
     assert state.read_cached(db)[1] == revision
 
     after = client.get('/api/v2/packages/binutils').json()['monitors']['build']
@@ -116,7 +116,7 @@ def test_clock_only_freshness_change_reprojects_rows_and_facets(
 @pytest.mark.parametrize('change', ['missing', 'failed', 'changed', 'scope', 'unknown_field'])
 def test_partial_or_changed_status_cannot_refresh_a_whole_vector(snapshot, tmp_path, change):
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     patches = collector.build_patch(snapshot, 'builds')
     stamp = state.utcnow()
     for targets in patches.values():
@@ -133,20 +133,20 @@ def test_partial_or_changed_status_cannot_refresh_a_whole_vector(snapshot, tmp_p
         patches.pop('binutils')
     else:
         patches['binutils']['rva23']['extra'] = True
-    assert not state.commit_build_heartbeat(db, snapshot, patches, component)
+    assert not state.commit_build_heartbeat(db, snapshot, patches, component, revision=state.read_cached(db)[1])
     assert state.read(db) == snapshot
 
 
 def test_cached_storage_reads_backup_clock(tmp_path, snapshot):
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     before, revision = state.read_cached(db)
     patches = collector.build_patch(snapshot, 'builds')
     stamp = (datetime.now(timezone.utc) + timedelta(seconds=15)).isoformat()
     for targets in patches.values():
         for fact in targets.values():
             fact.update(fetched_at=stamp, attempted_at=stamp)
-    assert state.commit_build_heartbeat(db, snapshot, patches, state.success(snapshot['components']['builds'], {}, stamp))
+    assert state.commit_build_heartbeat(db, snapshot, patches, state.success(snapshot['components']['builds'], {}, stamp), revision=state.read_cached(db)[1])
     after, same = state.read_cached(db, (before, revision))
     assert same == revision and before['builds'] != after['builds']
     assert before == snapshot  # Readers never mutate another request's snapshot.
@@ -164,7 +164,7 @@ def test_restore_with_same_revision_does_not_reuse_a_newer_clock(snapshot, tmp_p
             fact.update(fetched_at=at.isoformat(), attempted_at=at.isoformat())
     snapshot['components']['builds'] = state.success({}, {}, at.isoformat())
     db = tmp_path / 'state.db'; backup = tmp_path / 'backup.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     with sqlite3.connect(db) as src, sqlite3.connect(backup) as dst:
         src.backup(dst)
     now = at + timedelta(seconds=20)
@@ -173,7 +173,7 @@ def test_restore_with_same_revision_does_not_reuse_a_newer_clock(snapshot, tmp_p
     for targets in patches.values():
         for fact in targets.values():
             fact.update(fetched_at=now.isoformat(), attempted_at=now.isoformat())
-    assert state.commit_build_heartbeat(db, snapshot, patches, state.success(snapshot['components']['builds'], {}, now.isoformat()))
+    assert state.commit_build_heartbeat(db, snapshot, patches, state.success(snapshot['components']['builds'], {}, now.isoformat()), revision=state.read_cached(db)[1])
     client = ProjectedClient(api.create_app(db))
     url = '/api/v2/packages/binutils'
     assert client.get(url).json()['monitors']['build']['check']['status'] == 'ok'

@@ -57,7 +57,7 @@ def test_changed_dimensions_and_package_order_rebuild_facets(snapshot, monkeypat
 def test_status_requests_do_not_reaggregate_and_failure_notice_is_live(snapshot, tmp_path, monkeypatch):
     monkeypatch.setattr(state, 'compare', lambda *args: 'current')
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     app = api.create_app(db)
     cache = app.state.projection
     cache.refresh()

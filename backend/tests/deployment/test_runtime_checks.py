@@ -36,7 +36,7 @@ def test_existing_snapshot_is_unchanged_and_native_disabled(runtime, tmp_path, m
     monkeypatch.setattr(runtime_checks.native_spec, 'query', lambda *_: pytest.fail('native disabled'))
     db = tmp_path / 'state.db'
     snapshot = {**state.empty(), 'generation': 7}
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     before = db.read_bytes()
     runtime_checks.check_runtime(runtime, db)
     assert db.read_bytes() == before
@@ -75,7 +75,7 @@ def test_corrupt_database_and_directory_refused(runtime, tmp_path):
                                     {'schema': 1, 'generation': -1}])
 def test_existing_invalid_snapshot_fails_preflight_without_writing(runtime, tmp_path, payload):
     db = tmp_path / 'db'
-    state.commit(db, state.empty())
+    state.commit(db, state.empty(), previous=state.read_cached(db))
     with closing(sqlite3.connect(db)) as conn, conn:
         if payload is None:
             conn.execute('DELETE FROM snapshot')
@@ -126,7 +126,7 @@ def test_supervisor_bad_config_starts_no_tasks(runtime, tmp_path, monkeypatch, c
 def test_startup_recovers_real_hot_journal_but_readonly_checks_do_not(runtime, tmp_path):
     db = tmp_path / 'state #1?.db'
     snapshot = {**state.empty(), 'generation': 7}
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     before = db.read_bytes()
     leave_hot_journal(db)
     journal = Path(str(db) + '-journal')
@@ -157,7 +157,7 @@ def test_recovery_never_creates_missing_or_replaces_corrupt_database(runtime, tm
 
 def test_recovery_respects_application_writer_lock(tmp_path):
     db = tmp_path / 'db'
-    state.commit(db, {**state.empty(), 'generation': 1})
+    state.commit(db, {**state.empty(), 'generation': 1}, previous=state.read_cached(db))
     leave_hot_journal(db)
     # No second writer is allowed to start recovery under another writer's lock.
     from unittest.mock import patch

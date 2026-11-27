@@ -70,7 +70,7 @@ def test_existing_inputs_reuse_cache_but_new_backend_or_identity_does_not(config
     assert old['status'] == 'not_configured'
     snapshot['monitors'] = {'binutils': {'requires': old}}
     db = tmp_path / 'state.sqlite3'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     snapshot = state.read(db)
     assert snapshot['monitors']['binutils']['requires']['fingerprint'] == old['fingerprint']
     monkeypatch.setitem(monitor.BACKENDS, 'go', backend)
@@ -78,7 +78,7 @@ def test_existing_inputs_reuse_cache_but_new_backend_or_identity_does_not(config
     assert new['fingerprint'] != old['fingerprint']
     saved = {**new, 'status': 'ok', 'checked_at': state.utcnow(), 'findings': []}
     snapshot['monitors']['binutils']['requires'] = saved
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     snapshot = state.read(db)
     saved = snapshot['monitors']['binutils']['requires']
     policy = runner.refresh_policy('requires', new, saved, {})

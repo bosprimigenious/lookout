@@ -135,7 +135,7 @@ def test_inflight_old_response_cannot_be_published_as_a_new_package_version(
     snapshot['sources'] = {'binutils': snapshot['sources']['binutils']}
     old_version = snapshot['sources']['binutils']['version']
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     monkeypatch.setattr(runner.cfg, 'require_unchanged', lambda *args: None)
 
     class UpgradedDuringRequest(AdvisoryIO):
@@ -144,7 +144,7 @@ def test_inflight_old_response_cannot_be_published_as_a_new_package_version(
                 with state.writer_lock(db):
                     changed = state.read(db)
                     changed['sources']['binutils']['version'] = '4.0.0'
-                    state.commit(db, changed)
+                    state.commit(db, changed, previous=state.read_cached(db))
             self.entries = [{'id': 'GHSA-fixture-' + body['version'], 'affected': []}]
             return super().json(method, url, body)
 

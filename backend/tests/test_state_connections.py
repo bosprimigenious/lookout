@@ -22,6 +22,7 @@ class StateConnectionTests(unittest.TestCase):
             {}, {'raw_status': 'succeeded'}, '2026-09-25T00:00:00+00:00')}}
         self.snapshot['components']['builds'] = state.success({}, {}, '2026-09-25T00:00:00+00:00')
         state.commit(self.db, self.snapshot)
+        self.previous = state.read_cached(self.db)
 
     def record_connections(self, fail_sql=None):
         connections = []
@@ -57,13 +58,13 @@ class StateConnectionTests(unittest.TestCase):
         stamp = '2026-09-25T00:01:00+00:00'
         patches = {'widget': {'target': state.success({}, {'raw_status': 'succeeded'}, stamp)}}
         component = state.success({}, {}, stamp)
-        return state.commit_build_heartbeat(self.db, self.snapshot, patches, component)
+        return state.commit_build_heartbeat(self.db, self.snapshot, patches, component, revision=self.previous[1])
 
     def test_snapshot_commit_closes_after_committing(self):
         changed = {**self.snapshot, 'generation': 7}
         connections, recording = self.record_connections()
         with recording:
-            state.commit(self.db, changed)
+            state.commit(self.db, changed, previous=self.previous)
         self.assert_closed(connections)
         self.assertEqual(state.read(self.db), changed)
 
@@ -100,7 +101,7 @@ class StateConnectionTests(unittest.TestCase):
         changed = {**self.snapshot, 'generation': 7}
         connections, recording = self.record_connections('INSERT OR REPLACE INTO snapshot_clock')
         with recording, self.assertRaises(sqlite3.OperationalError):
-            state.commit(self.db, changed)
+            state.commit(self.db, changed, previous=self.previous)
         self.assert_closed(connections)
         self.assertEqual(state.read(self.db), self.snapshot)
 
@@ -144,9 +145,19 @@ class StateConnectionTests(unittest.TestCase):
         before = deepcopy(self.snapshot)
         connections, recording = self.record_connections()
         with recording:
-            self.assertFalse(state.commit_build_heartbeat(self.db, self.snapshot, {}, {'error': 'offline'}))
+            self.assertFalse(state.commit_build_heartbeat(self.db, self.snapshot, {}, {'error': 'offline'}, revision=self.previous[1]))
         self.assertEqual(connections, [])
         self.assertEqual(self.snapshot, before)
+
+    def test_stale_heartbeat_cannot_relabel_newer_observations(self):
+        changed = deepcopy(self.snapshot)
+        changed['builds']['widget']['target']['raw_status'] = 'failed'
+        state.commit(self.db, changed, previous=self.previous)
+        before = self.db.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'stale heartbeat'):
+            self.heartbeat()
+        self.assertEqual(self.db.read_bytes(), before)
+        self.assertEqual(state.read(self.db), changed)
 
     def test_decode_does_not_block_writer_or_mix_snapshot_revisions(self):
         _, revision = state.read_cached(self.db)

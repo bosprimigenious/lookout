@@ -12,7 +12,7 @@ from tracker.readmodel import snapshot as view
 
 def test_requests_read_complete_previous_model_while_replacement_is_computing(snapshot, tmp_path, monkeypatch):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     app = api.create_app(db)
     app.state.projection.refresh()
     client = TestClient(app)
@@ -29,7 +29,7 @@ def test_requests_read_complete_previous_model_while_replacement_is_computing(sn
     updated = deepcopy(snapshot)
     updated['sources']['binutils']['version'] = 'replacement'
     updated['targets'][0]['label'] = 'replacement target'
-    state.commit(db, updated)
+    state.commit(db, updated, previous=state.read_cached(db))
     with ThreadPoolExecutor(max_workers=2) as pool:
         work = pool.submit(app.state.projection.refresh)
         try:
@@ -48,7 +48,7 @@ def test_requests_read_complete_previous_model_while_replacement_is_computing(sn
 
 def test_refresh_failure_retains_data_but_never_reports_fresh_success(snapshot, tmp_path):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     app = api.create_app(db)
     app.state.projection.refresh()
     client = TestClient(app)
@@ -60,7 +60,7 @@ def test_refresh_failure_retains_data_but_never_reports_fresh_success(snapshot, 
     assert ready['projection_notice'] in client.get('/api/ui/packages').json()['data_status']['notes']
     assert ready['projection_notice'] in client.get('/api/ui/packages/binutils').json()['data_status']['notes']
     replacement = tmp_path / 'replacement.db'
-    state.commit(replacement, snapshot)
+    state.commit(replacement, snapshot, previous=state.read_cached(replacement))
     replacement.replace(db)
     app.state.projection.refresh()
     assert client.get('/readyz').json()['projection_notice'] is None
@@ -68,7 +68,7 @@ def test_refresh_failure_retains_data_but_never_reports_fresh_success(snapshot, 
 
 def test_expired_prepared_evidence_is_marked_until_refresh(snapshot, tmp_path, monkeypatch):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     app = api.create_app(db)
     cache = app.state.projection
     cache.refresh()

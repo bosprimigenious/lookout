@@ -118,7 +118,7 @@ def test_component_link_is_visible_without_frontend_provider_code(snapshot, tmp_
     required.pop('target')
     observation['findings'] = [finding('part', 'Dependencies', 'Example::Part >= 1', [], COMPONENT['url'], requirement=required)]
     db = tmp_path / 'snapshot.sqlite3'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     response = client.get('/api/v2/packages/binutils')
     assert response.status_code == 200

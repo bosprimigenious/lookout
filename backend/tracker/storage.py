@@ -158,12 +158,13 @@ def commit(db, snapshot, *, previous=None):
             if version != FORMAT and (version != 0 or exists):
                 raise ValueError('database migration required; use deploy/migrate-state.py before starting collectors')
             _create(conn)
-            if previous is not None:
-                clock = conn.execute('SELECT revision, build_checked_at FROM snapshot_clock WHERE id=1').fetchone()
-                revision = previous[1]
-                expected = (revision.token, revision.build_stamp) if revision else None
-                if clock != expected:
-                    raise ValueError('snapshot changed since read; refusing stale incremental write')
+            clock = conn.execute('SELECT revision, build_checked_at FROM snapshot_clock WHERE id=1').fetchone()
+            if exists and clock is None:
+                raise ValueError('snapshot clock row is missing')
+            revision = previous[1] if previous is not None else None
+            expected = (revision.token, revision.build_stamp) if revision else None
+            if clock != expected:
+                raise ValueError('snapshot changed since read; refusing stale incremental write')
             result = _write(conn, header, records, snapshot)
             conn.commit()
             return result

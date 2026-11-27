@@ -94,7 +94,7 @@ def test_source0_identity_is_resolved_by_the_existing_planner(tmp_path, capsys):
             {'number': 0, 'url': 'https://static.crates.io/crates/source-widget/source-widget-1.2.3.crate'}]},
     }, state.utcnow())
     database = tmp_path / 'snapshot.sqlite3'
-    state.commit(database, snapshot)
+    state.commit(database, snapshot, previous=state.read_cached(database))
     before = database.read_bytes()
     assert cli.main(['explain', 'widget', '--monitor', 'license', '--config', str(path), '--db', str(database)]) == 0
     result = json.loads(capsys.readouterr().out)
@@ -121,7 +121,7 @@ def test_changed_binding_distinguishes_planner_inputs_from_configured_rule(tmp_p
     snapshot = observed_snapshot(config)
     snapshot['bindings'] = {'widget': {'compare': 'widget'}}
     database = tmp_path / 'snapshot.sqlite3'
-    state.commit(database, snapshot)
+    state.commit(database, snapshot, previous=state.read_cached(database))
     args = ['explain', 'widget', '--monitor', 'license', '--config', str(path), '--db', str(database)]
     assert cli.main(args) == 0
     result = json.loads(capsys.readouterr().out)
@@ -166,7 +166,7 @@ def test_explicit_eol_check_leaves_database_and_config_unchanged(tmp_path, monke
     path = configuration(tmp_path, '[widget]\nmonitors = { eol = { product = "widget", cycle_parts = 2 } }\n')
     config = cfg.load(path)
     database = tmp_path / 'snapshot.sqlite3'
-    state.commit(database, observed_snapshot(config))
+    state.commit(database, observed_snapshot(config), previous=state.read_cached(database))
     before = database.read_bytes()
     inputs = {p: Path(p).read_bytes() for p in config['input_hashes']}
     requests = []

@@ -4,5 +4,5 @@ from tracker.api import create_app
 
 def client_for(snapshot, tmp_path):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     return ProjectedClient(create_app(db)), db

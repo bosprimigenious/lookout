@@ -240,7 +240,7 @@ def test_dependency_changes_reproject_without_rechecking_upstream(snapshot, tmp_
     monkeypatch.setattr(state, 'compare', lambda *args: 'outdated')
     add_requires(snapshot)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     original = deepcopy(snapshot['monitors'])
     client = ProjectedClient(create_app(db))
     route = '/api/v2/packages/binutils'
@@ -252,7 +252,7 @@ def test_dependency_changes_reproject_without_rechecking_upstream(snapshot, tmp_
     # The external edge identifies the dependency, exact constraint, comparator and source observation.
     assert data['requirements'][0]['package'] == 'runtime-package'
     snapshot['sources']['runtime-package']['version'] = '3.7.8'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     assert client.get(route).json()['monitors']['requires']['data']['requirements'][0]['satisfaction'] == 'unsatisfied'
     assert state.read(db)['monitors'] == original
     returned = client.get(route).json()['monitors']['requires']['data']['findings']
@@ -272,7 +272,7 @@ def test_requires_document_is_small_and_status_has_text_meaning(snapshot, tmp_pa
     elif status == 'unknown':
         snapshot['dependency_packages'] = {}
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     page = client.get('/api/ui/packages/binutils').json()
     section = next(s for s in page['sections'] if s['id'] == 'requires')
@@ -313,7 +313,7 @@ def test_dependency_mapping_is_published_even_on_an_idle_heartbeat(config, snaps
     monkeypatch.setattr(state, 'compare', lambda *args: 'outdated')
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda *args: None)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     calls = []
 
     def handler(request):

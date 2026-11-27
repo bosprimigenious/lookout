@@ -20,7 +20,7 @@ def test_automatic_upstream_empty_rules_converge(config, snapshot, tmp_path, mon
     config.update(native={}, packages={}, nv_digest='empty', config_digest='cfg')
     monkeypatch.setattr(cfg, 'require_unchanged', lambda config, path: None)
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot if seeded else state.empty())
+    state.commit(db, snapshot if seeded else state.empty(), previous=state.read_cached(db))
     def run(*args, **kwargs):
         pytest.fail('empty rules must not invoke nvchecker')
     first = collector.check_upstreams(config, 'unused', db, run_nv=run, due=True)
@@ -45,7 +45,7 @@ def test_automatic_upstream_subset_retries_and_noop(config, snapshot, tmp_path, 
         fact.update(attempted_at=now.isoformat(), fetched_at=now.isoformat())
     config['native']['binutils']['prefix'] = 'v'
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     monkeypatch.setattr(cfg, 'require_unchanged', lambda config, path: None)
     selected = []
     failure = [True]
@@ -69,7 +69,7 @@ def test_automatic_upstream_subset_retries_and_noop(config, snapshot, tmp_path, 
     assert recovered['components']['nvchecker']['fetched_at'] == now.isoformat()
     # Current RPM source changes recompute comparison, not upstream identity queries.
     recovered['sources']['binutils']['version'] = '3.9.1'
-    state.commit(db, recovered)
+    state.commit(db, recovered, previous=state.read_cached(db))
     collector.check_upstreams(config, 'unused', db, run_nv=run, due=True)
     assert len(selected) == 2
     clock[0] = now + timedelta(seconds=21600)
@@ -93,18 +93,18 @@ def test_query_dependencies_rebind_source_without_requery(config, snapshot, tmp_
     monkeypatch.setitem(monitor_registry.REGISTRY, 'fixture', adapter)
     io = SimpleNamespace(for_hosts=lambda *args, **kwargs: None)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     first = monitor.collect(config, 'unused', db, io=io)
     old = first['monitors']['binutils']['fixture']
     first['sources']['binutils']['srcmd5'] = 'comment-only-change'
-    state.commit(db, first)
+    state.commit(db, first, previous=state.read_cached(db))
     rebound = monitor.collect(config, 'unused', db, io=io)['monitors']['binutils']['fixture']
     assert len(calls) == 1 and rebound['subject']['revision'] == 'comment-only-change'
     for key in ('fingerprint', 'checked_at', 'evidence_revision', 'changed_at'):
         assert rebound[key] == old[key]
     updated = state.read(db)
     updated['sources']['binutils']['version'] = '4.0'
-    state.commit(db, updated)
+    state.commit(db, updated, previous=state.read_cached(db))
     monitor.collect(config, 'unused', db, io=io)
     assert len(calls) == 2
     # Ports without an explicit dependency hook keep safe revision invalidation.
@@ -131,7 +131,7 @@ def test_git_delta_rename_retry_macros_and_rewritten_history(config, snapshot, t
     commit()
     config['spec'] = dict(repo=str(repo), macro_package='macros', changelog_limit=20, fetch_timeout_seconds=30, interval_seconds=60)
     snapshot['sources'] = {n:snapshot['sources'][n] for n in ('binutils','foo3')}
-    db=tmp_path/'snapshot.db';state.commit(db,snapshot)
+    db=tmp_path/'snapshot.db';state.commit(db,snapshot, previous=state.read_cached(db))
     monkeypatch.setattr(spec_git,'fetch',lambda *a,**k:(True,None))
     parsed=Counter(); broken=[False]
     def describe(data, macros=()):
@@ -154,7 +154,7 @@ def test_git_delta_rename_retry_macros_and_rewritten_history(config, snapshot, t
     assert renamed['specs']['foo4']['metadata']['version']=='1.0'
     assert 'foo3' not in state.package_names(renamed)
     assert 'foo3' in renamed['sources']
-    renamed['sources']['foo4']=deepcopy(renamed['sources']['foo3']);state.commit(db,renamed)
+    renamed['sources']['foo4']=deepcopy(renamed['sources']['foo3']);state.commit(db,renamed, previous=state.read_cached(db))
     added=collector.check_specs(config,db,describe)
     assert added['specs']['foo4']['metadata']['version']=='1.0'
     macro=repo/'SPECS/macros/macros.test';macro.write_text('%fixture 1\n');commit()
@@ -183,10 +183,10 @@ def test_source_recovery_reuses_the_same_fresh_provider_result(config, snapshot,
         check=check))
     db = tmp_path / 'snapshot.db'
     io = SimpleNamespace(for_hosts=lambda *a, **kw: None)
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     first = monitor.collect(config, 'unused', db, io=io)
     first['sources']['binutils']['error'] = 'source unavailable'
-    state.commit(db, first)
+    state.commit(db, first, previous=state.read_cached(db))
     blocked = monitor.collect(config, 'unused', db, io=io)
     assert len(calls) == 1
     old = first['monitors']['binutils']['fixture']
@@ -197,13 +197,13 @@ def test_source_recovery_reuses_the_same_fresh_provider_result(config, snapshot,
     from tracker.monitors import model as monitor_model
     assert monitor_model.project(blocked, 'binutils', datetime.now(timezone.utc))['checks'][0]['status'] == 'input_unavailable'
     blocked['sources']['binutils']['error'] = None
-    state.commit(db, blocked)
+    state.commit(db, blocked, previous=state.read_cached(db))
     recovered = monitor.collect(config, 'unused', db, io=io)
     assert len(calls) == 1 and recovered['monitors']['binutils']['fixture']['status'] == provider_status
     assert recovered['monitors']['binutils']['fixture']['checked_at'] == old['checked_at']
     # A real query change still invalidates the result.
     recovered['sources']['binutils']['version'] = '3.9.1'
-    state.commit(db, recovered)
+    state.commit(db, recovered, previous=state.read_cached(db))
     monitor.collect(config, 'unused', db, io=io)
     assert len(calls) == 2
 
@@ -220,12 +220,12 @@ def test_source_gate_does_not_postpone_expired_checks(config, snapshot, tmp_path
         check=lambda *a: calls.append(1) or {'status': 'ok', 'findings': [], 'note': None}))
     db = tmp_path / 'state.db'
     io = SimpleNamespace(for_hosts=lambda *a, **kw: None)
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     checked = monitor.collect(config, 'unused', db, io=io)
     fact = checked['monitors']['binutils']['fixture']
     fact.update(checked_at='2000-01-01T00:00:00+00:00', attempted_at='2000-01-01T00:00:00+00:00',
                 input_status='unsupported')
-    state.commit(db, checked)
+    state.commit(db, checked, previous=state.read_cached(db))
     monitor.collect(config, 'unused', db, io=io)
     assert len(calls) == 2
 

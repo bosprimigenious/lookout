@@ -22,7 +22,7 @@ def test_blocked_is_an_issue_once_per_source_package(snapshot, tmp_path):
     snapshot['builds']['binutils']['rva20']['raw_status'] = 'blocked'
     snapshot['builds']['foo4']['x86_64']['raw_status'] = 'scheduled'
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     result = client.get(query_url('/api/v2/packages', {'view': 'problems'})).json()
     assert result['total'] == result['counts']['problems'] == 2

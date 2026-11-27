@@ -90,7 +90,7 @@ def test_latest_release_heartbeat_discovers_new_advisory_without_version_change(
                   config_digest='fixture', nv_digest='fixture')
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda *args: None)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     io = AdvisoryIO()
 
     first = monitor.collect(config, 'unused', db, io=io)

@@ -125,7 +125,7 @@ def test_new_monitor_uses_existing_runner_projection_and_api(config, snapshot, m
     from tests.conftest import ProjectedClient
 
     db = tmp_path / "state.db"
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     response = client.get(query_url('/api/v2/packages', {'maintenance': 'NewSignal'}))
     assert response.status_code == 200
@@ -215,7 +215,7 @@ def test_buildsystem_configuration_not_frontend_categories(snapshot, tmp_path):
     snapshot['specs']['binutils'] = {'metadata': {'name': 'binutils', 'buildsystem': 'new-buildsystem'}}
     snapshot['specs']['foo3'] = {'metadata': {'name': 'foo3', 'buildsystem': None}}
     snapshot['presentation'] = {'buildsystems': {'new-buildsystem': {'background': '#123456', 'foreground': '#ffffff'}}}
-    db = tmp_path/'state.db';state.commit(db, snapshot);client = ProjectedClient(create_app(db))
+    db = tmp_path/'state.db';state.commit(db, snapshot, previous=state.read_cached(db));client = ProjectedClient(create_app(db))
     result = client.get(query_url('/api/v2/packages', {'buildsystem': 'new-buildsystem'})).json()
     assert result['total'] == 1 and result['items'][0]['monitors']['source']['data']['buildsystem'] == 'new-buildsystem'
     assert result['presentation'] == {'buildsystems': {
@@ -285,7 +285,7 @@ def test_monitor_batch_fairness_and_partial_publication(config, snapshot, monkey
             VERSION=1, HOSTS=set(), inputs=lambda package, configured: {}, check=check))
     config.update(monitors={'enabled':['first','second'], 'batch_size':2, 'workers':1}, config_digest='fixture', nv_digest='fixture')
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda config, path: None)
-    db = tmp_path/'state.db';state.commit(db, snapshot)
+    db = tmp_path/'state.db';state.commit(db, snapshot, previous=state.read_cached(db))
     commit = state.commit
     def capture(path, new, **kwargs):
         published.append(deepcopy(new))
@@ -354,7 +354,7 @@ def test_facets_follow_search_other_filter_and_view_not_pagination(snapshot, tmp
             }
         }
     db = tmp_path / "state.db"
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     def listing(filters, **parameters):
         response = client.get(query_url('/api/v2/packages', filters, **parameters))
@@ -504,7 +504,7 @@ def test_heartbeat_drains_batches_then_does_not_write(config, snapshot, monkeypa
     config.update(monitors={'enabled':['fixture'], 'batch_size':1, 'workers':1},
                   config_digest='fixture', nv_digest='fixture')
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda config, path: None)
-    db=tmp_path/'state.db';state.commit(db,snapshot)
+    db=tmp_path/'state.db';state.commit(db,snapshot, previous=state.read_cached(db))
     for _ in snapshot['sources']:
         monitor.collect(config,'unused',db,io=FixtureIO({}))
     assert calls and len(calls)==len(set(calls))
@@ -522,7 +522,7 @@ def test_failed_check_uses_attempt_backoff(config, snapshot, monkeypatch, tmp_pa
         VERSION=1,HOSTS=set(),inputs=lambda *args:{},check=check))
     config.update(monitors={'enabled':['fixture'],'batch_size':100},config_digest='fixture',nv_digest='fixture')
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda config, path: None)
-    db=tmp_path/'state.db';state.commit(db,snapshot)
+    db=tmp_path/'state.db';state.commit(db,snapshot, previous=state.read_cached(db))
     monitor.collect(config,'unused',db,io=FixtureIO({}));count=len(calls)
     monitor.collect(config,'unused',db,io=FixtureIO({}))
     assert count>0 and len(calls)==count

@@ -32,7 +32,7 @@ def repository(tmp_path, monkeypatch):
     monkeypatch.setattr(state, 'utcnow', lambda: clock[0])
     monkeypatch.setattr(spec_git, 'fetch', lambda *a, **k: (True, None))
     db = tmp_path / 'state.db'
-    state.commit(db, state.empty())
+    state.commit(db, state.empty(), previous=state.read_cached(db))
     return config, db, commit, clock
 
 
@@ -88,7 +88,7 @@ def test_offline_parse_requires_confirmed_source(repository, monkeypatch, change
         config['spec']['url'] = 'https://example.invalid/other.git'
     else:
         first['components']['spec_git'].pop('fetched_at')
-        state.commit(db, first)
+        state.commit(db, first, previous=state.read_cached(db))
     monkeypatch.setattr(spec_git, 'fetch', lambda *a, **k: (False, 'git fetch timeout'))
     actual = collector.check_specs(config, db, lambda *a, **k: pytest.fail('unconfirmed source'))
     assert actual['specs'] == first['specs']
@@ -175,7 +175,7 @@ def test_legacy_checkpoint_is_reconciled_once(repository):
     current['specs']['widget']['metadata']['version'] = 'incorrect old cached version'
     current['specs']['widget'].pop('input_fingerprint')
     current['components']['spec_git']['input_fingerprint'] = 'legacy-history-selector'
-    state.commit(db, current)
+    state.commit(db, current, previous=state.read_cached(db))
     repaired = collector.check_specs(config, db, describe)
     assert repaired['specs']['widget']['metadata']['version'] == '1'
     assert repaired['components']['spec_git']['mode'] == 'full'

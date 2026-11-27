@@ -74,11 +74,12 @@ f.write_text(tomlkit.dumps(v))
     # Seed dated, synthetic observations through the real writer. Subsequent
     # entrypoint heartbeats must reuse the unchanged query and refresh the edit.
     seed = '''from pathlib import Path
+from copy import deepcopy
 import json
 from tracker import config, state
 from tracker.monitors import runner
 c=config.load('/config/tracker.toml')
-p=Path('/data/state/tracker.sqlite3'); s=state.read(p); now=state.utcnow()
+p=Path('/data/state/tracker.sqlite3'); previous=state.read_cached(p); s=deepcopy(previous[0]); now=state.utcnow()
 s.update(bindings=c['packages'], native_ids=list(c['native']), stale_after_seconds=7200)
 for name in c['native']:
     s['inventory'][name]=name
@@ -88,7 +89,7 @@ for name in c['native']:
     observation=runner.plan(c,s,name,'security')
     observation.update(status='ok', checked_at=now, observed_at=now, fetched_at=now, error=None, input_note=None)
     s['monitors'].setdefault(name,{})['security']=observation
-state.commit(p,s)
+state.commit(p,s,previous=previous)
 print(json.dumps({'stable':s['monitors']['catalog-stable']['security'],
  'files':{str(f):f.read_text() for f in Path('/config').rglob('*') if f.is_file()}}))
 '''
@@ -186,12 +187,13 @@ def exercise(image, root):
         # Seed through the actual SQLite writer in the stopped test instance.
         service.stop()
         seed = '''from pathlib import Path
+from copy import deepcopy
 from tracker import state
 p=Path('/data/state/tracker.sqlite3')
-s=state.read(p)
+previous=state.read_cached(p); s=deepcopy(previous[0])
 s['inventory']['release-fixture']='release-fixture'
 s['sources']['release-fixture']=state.success({}, {'version':'1.2.3'}, state.utcnow())
-state.commit(p,s)
+state.commit(p,s,previous=previous)
 '''
         run(['docker', 'run', '--rm', '--network', 'none', *PROTECTION,
              '--mount', f'type=volume,src={original_data},dst=/data,volume-nocopy',

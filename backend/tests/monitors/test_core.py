@@ -124,9 +124,9 @@ def test_source_secrets_omitted():
     assert p=={'source':'jq','url':'https://example.org/data'}
 
 def test_atomic_bad_snapshot(tmp_path,snapshot):
-    db=tmp_path/'db';state.commit(db,snapshot)
+    db=tmp_path/'db';state.commit(db,snapshot, previous=state.read_cached(db))
     bad=deepcopy(snapshot);bad['bad']=object()
-    with pytest.raises(ValueError, match="non-JSON"):state.commit(db,bad)
+    with pytest.raises(ValueError, match="non-JSON"):state.commit(db,bad, previous=state.read_cached(db))
     assert state.read(db)==snapshot
     with sqlite3.connect(db) as conn:assert conn.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
 
@@ -171,21 +171,21 @@ def test_obs_collection_refreshes_source_without_upstreams(config,snapshot,monke
     assert new['tracks']==snapshot['tracks']
 
 def test_slow_upstream_run_preserves_newer_obs(config,snapshot,tmp_path,monkeypatch):
-    db=tmp_path/'snapshot.db';state.commit(db,snapshot)
+    db=tmp_path/'snapshot.db';state.commit(db,snapshot, previous=state.read_cached(db))
     config['nv_digest']='fixed'
     monkeypatch.setattr(cfg,'require_unchanged',lambda *_args:None)
     def concurrent_obs(config,prior,now,on_results=None,tracks=None):
         # This write occurs while the external checker is running: no writer lock held.
         with state.writer_lock(db):
             newer=state.read(db);newer['sources']['binutils']['version']='4.0.0'
-            newer['generation']+=1;state.commit(db,newer)
+            newer['generation']+=1;state.commit(db,newer, previous=state.read_cached(db))
         return prior,None
     new=collector.check_upstreams(config,'unused',db,run_nv=concurrent_obs)
     assert new['sources']['binutils']['version']=='4.0.0'
     assert new['generation']==snapshot['generation']+2
 
 def test_config_change_during_upstream_check_is_not_published(config,snapshot,tmp_path,configured_path):
-    db=tmp_path/'snapshot.db';state.commit(db,snapshot)
+    db=tmp_path/'snapshot.db';state.commit(db,snapshot, previous=state.read_cached(db))
     configured_path.write_text(configured_path.read_text() + '\n# operator changed configuration\n')
     with pytest.raises(ValueError,match='configuration changed'):
         collector.check_upstreams(config,configured_path,db,run_nv=keep_nv)

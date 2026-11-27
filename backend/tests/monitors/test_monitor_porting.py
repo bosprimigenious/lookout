@@ -24,7 +24,7 @@ def test_port_runs_through_heartbeat_storage_api_and_facets(config, snapshot, mo
     monkeypatch.setitem(monitor_registry.REGISTRY, 'yanked', monitor_yanked)
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda config, path: None)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     response = {'info': {'name': 'upstream-fixture', 'version': '3.9.0', 'yanked': True}}
     calls = []
 
@@ -94,7 +94,7 @@ def test_one_broken_input_does_not_stop_other_packages(config, snapshot, monkeyp
     config.update(monitors={'enabled': ['fixture']}, config_digest='fixture', nv_digest='fixture')
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda config, path: None)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     result = monitor.collect(config, 'unused', db, io=SimpleNamespace(for_hosts=lambda hosts, **kwargs: None))
     assert result['monitors']['binutils']['fixture']['status'] == 'error'
     assert set(checked) == {'foo3', 'foo4', 'untracked'}
@@ -116,7 +116,7 @@ def test_v2_port_catalog_checks_and_facets_share_the_same_observation(config, sn
     monkeypatch.setattr(monitor_yanked, 'TITLE', 'Release files', raising=False)
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda config, path: None)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     with httpx.Client(transport=httpx.MockTransport(
             lambda request: httpx.Response(200, json={'info': {'name': 'upstream-fixture', 'version': '3.9.0', 'yanked': True}}))) as client:
         collected = monitor.collect(config, 'unused', db, io=IO(client=client))

@@ -45,7 +45,7 @@ def run(fixture):
 
 def one_package(fixture):
     fixture.snapshot['sources'].pop('foo3')
-    state.commit(fixture.db, fixture.snapshot)
+    state.commit(fixture.db, fixture.snapshot, previous=state.read_cached(fixture.db))
 
 
 def test_single_completed_result_has_no_duplicate_final_publish(collection):
@@ -82,7 +82,7 @@ def test_cache_failure_still_publishes_successful_monitor_observation(collection
 
 
 def test_last_result_in_coalescing_window_is_flushed(collection):
-    state.commit(collection.db, collection.snapshot)
+    state.commit(collection.db, collection.snapshot, previous=state.read_cached(collection.db))
     with patch.object(cfg, 'require_unchanged', wraps=cfg.require_unchanged) as guards, \
          patch.object(state, 'read_cached', wraps=state.read_cached) as reads, \
          patch.object(state, 'commit', wraps=state.commit) as writes:
@@ -119,13 +119,13 @@ def test_no_jobs_still_publishes_catalog_input_invalidation_and_recovery(collect
     assert renamed['monitors'] == initial['monitors']
 
     renamed['sources']['binutils']['error'] = 'observation unavailable'
-    state.commit(collection.db, renamed)
+    state.commit(collection.db, renamed, previous=state.read_cached(collection.db))
     with patch.object(state, 'commit', wraps=state.commit) as writes:
         blocked = run(collection)
     assert writes.call_count == 1
     assert blocked['monitors']['binutils']['fixture']['input_status'] == 'unsupported'
     blocked['sources']['binutils']['error'] = None
-    state.commit(collection.db, blocked)
+    state.commit(collection.db, blocked, previous=state.read_cached(collection.db))
     with patch.object(state, 'commit', wraps=state.commit) as writes:
         recovered = run(collection)
     assert writes.call_count == 1
@@ -187,7 +187,7 @@ def test_completed_result_revalidates_source_scope_and_inputs(collection, change
             latest['obs']['project'] = 'another-project'
         else:
             latest['sources']['binutils']['version'] = '9.0'
-        state.commit(collection.db, latest)
+        state.commit(collection.db, latest, previous=state.read_cached(collection.db))
         return {'status': 'ok', 'findings': [], 'note': None}
 
     collection.adapter.check = check
@@ -209,7 +209,7 @@ def test_recovered_input_waits_as_pending(collection):
         collection.snapshot.setdefault('monitors', {})[name] = {'fixture': {
             **proposed, 'status': 'unsupported', 'input_status': 'unsupported',
             'note': 'Current source version/revision is not established.'}}
-    state.commit(collection.db, collection.snapshot)
+    state.commit(collection.db, collection.snapshot, previous=state.read_cached(collection.db))
     result = monitor.collect(collection.config, collection.path, collection.db, io=collection.io)
     facts = [providers['fixture'] for providers in result['monitors'].values()]
     assert sorted(fact['status'] for fact in facts) == ['ok', 'pending']

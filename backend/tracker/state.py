@@ -62,7 +62,7 @@ def read_cached(db, previous: tuple[storage.Snapshot, storage.Revision | None] |
     return snapshot, revision
 
 
-def commit_build_heartbeat(db, latest, patches, component):
+def commit_build_heartbeat(db, latest, patches, component, *, revision):
     """Return True only when a complete successful poll changed no status facts.
 
     Called under writer_lock. A partial/failing response, scope change or changed
@@ -90,9 +90,11 @@ def commit_build_heartbeat(db, latest, patches, component):
                        {k: v for k, v in old.items() if k in BUILD_FIELDS['builds'] - stamps}):
                 return False
     with closing(sqlite3.connect(db, timeout=10)) as conn, conn:
-        updated = conn.execute('UPDATE snapshot_clock SET build_checked_at=? WHERE id=1', (stamp,))
+        updated = conn.execute(
+            'UPDATE snapshot_clock SET build_checked_at=? WHERE id=1 AND revision=? AND build_checked_at IS ?',
+            (stamp, revision.token, revision.build_stamp))
         if updated.rowcount != 1:
-            raise ValueError('snapshot clock row is missing')
+            raise ValueError('snapshot changed since read; refusing stale heartbeat')
         return True
 
 
@@ -102,6 +104,7 @@ def commit(db, snapshot, *, previous=None):
     Concurrent writers must hold writer_lock across read/merge/commit; a transaction
     alone cannot prevent overwriting a newer snapshot with old input.
     Each payload write gets a new storage revision, even if generation is unchanged.
+    Omitting ``previous`` permits initialization only, never replacement.
     ``previous`` supplies the expected storage revision and heartbeat. Payloads
     are compared with database digests, never with mutable caller-owned objects.
     """

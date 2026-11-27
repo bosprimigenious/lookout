@@ -23,7 +23,7 @@ def setup_cache(tmp_path, config, monkeypatch, change=None):
     if change:
         change(snapshot)
     db = tmp_path / 'cache.sqlite3'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     clock, calls = [NOW], []
     monkeypatch.setattr(read_model.time, 'time', lambda: clock[0].timestamp())
     project = view.project_monitors
@@ -157,7 +157,7 @@ def test_snapshot_changes_invalidate_even_with_same_generation(tmp_path, config,
     assert get(client)['monitors']['source']['data']['version'] == '3.9.0'
     snap['sources']['binutils']['version'] = '3.9.1'
     snap['generation'] = generation
-    state.commit(db, snap)
+    state.commit(db, snap, previous=state.read_cached(db))
     assert get(client)['monitors']['source']['data']['version'] == '3.9.1'
     assert len(calls) == 2
 
@@ -168,7 +168,7 @@ def test_atomic_replacement_with_same_mtime_and_size_invalidates(tmp_path, confi
     previous = db.stat()
     snap['sources']['binutils']['version'] = '3.9.1'
     replacement = tmp_path/'replacement.sqlite3'
-    state.commit(replacement, snap)
+    state.commit(replacement, snap, previous=state.read_cached(replacement))
     assert replacement.stat().st_size == previous.st_size
     os.utime(replacement, ns=(previous.st_atime_ns, previous.st_mtime_ns))
     os.replace(replacement, db)
@@ -200,7 +200,7 @@ def test_concurrent_replacement_never_mixes_snapshot_and_projection(tmp_path, co
         replacement = deepcopy(snap)
         replacement['targets'][0]['label'] = 'new target'
         replacement['sources']['binutils']['version'] = '3.9.1'
-        state.commit(db, replacement)  # Same generation; change while first projection is running.
+        state.commit(db, replacement, previous=state.read_cached(db))  # Same generation; change while first projection is running.
         second = pool.submit(get, client, '/api/v2/packages')
         proceed.set()
         old, new = first.result(timeout=5), second.result(timeout=5)
@@ -280,7 +280,7 @@ def test_query_index_is_shared_without_sharing_selections(tmp_path, config, monk
     get(client)
     assert len(builds) == 2
     snap['sources']['binutils']['version'] = 'replacement'
-    state.commit(db, snap)
+    state.commit(db, snap, previous=state.read_cached(db))
     assert get(client)['monitors']['source']['data']['version'] == 'replacement'
     assert len(builds) == 3
 
@@ -289,7 +289,7 @@ def test_component_only_snapshot_projects_without_targets(tmp_path):
     db = tmp_path / 'snapshot.db'
     snapshot = state.empty()
     snapshot['generation'] = 1
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     from tracker.readmodel.cache import ProjectionCache
     cache = ProjectionCache(db)
     cache._refresh()

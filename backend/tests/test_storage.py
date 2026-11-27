@@ -27,7 +27,7 @@ def test_migration_preserves_observations_and_is_idempotent(tmp_path, snapshot):
     legacy(db, snapshot, state.utcnow())
     before = state.read(db)
     with pytest.raises(ValueError, match='migration required'):
-        state.commit(db, before)
+        state.commit(db, before, previous=state.read_cached(db))
     assert storage.migrate(db)
     assert state.read(db) == before
     pristine = db.read_bytes()
@@ -37,12 +37,12 @@ def test_migration_preserves_observations_and_is_idempotent(tmp_path, snapshot):
 
 def test_only_changed_record_is_rewritten(tmp_path, snapshot):
     db = tmp_path / 'db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     before = rows(db)
     after = deepcopy(snapshot)
     after['sources']['binutils']['version'] = 'next'
     after['generation'] += 1
-    result = state.commit(db, after)
+    result = state.commit(db, after, previous=state.read_cached(db))
     changed = [key for key, value in rows(db).items() if before[key] != value]
     assert changed == [('sources', 'binutils', '')]
     assert result['changed_records'] == 1
@@ -51,12 +51,12 @@ def test_only_changed_record_is_rewritten(tmp_path, snapshot):
 
 def test_cached_read_reuses_unmodified_records_and_handles_deletion(tmp_path, snapshot):
     db = tmp_path / 'db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     first, revision = state.read_cached(db)
     changed = deepcopy(snapshot)
     changed['sources']['binutils']['version'] = 'next'
     changed['sources'].pop('foo3')
-    state.commit(db, changed)
+    state.commit(db, changed, previous=state.read_cached(db))
     second, following = state.read_cached(db, (first, revision))
     assert second == changed and following != revision
     assert second['sources']['foo4'] is first['sources']['foo4']
@@ -66,10 +66,10 @@ def test_cached_read_reuses_unmodified_records_and_handles_deletion(tmp_path, sn
 
 def test_cached_read_decodes_only_changed_rows_and_header(tmp_path, snapshot, monkeypatch):
     db = tmp_path / 'db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     previous = state.read_cached(db)
     snapshot['sources']['binutils']['version'] = 'next'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     loads, decoded = storage.json.loads, []
     def record(text):
         decoded.append(text)
@@ -83,20 +83,20 @@ def test_empty_and_absent_collections_round_trip(tmp_path):
     for i, extra in enumerate(({}, {'monitors': {}}, {'monitors': {'widget': {}}})):
         value = {**state.empty(), **extra}
         db = tmp_path / str(i)
-        state.commit(db, value)
+        state.commit(db, value, previous=state.read_cached(db))
         assert state.read(db) == value
 
 
 def test_monitor_write_does_not_materialize_unchanged_build_heartbeat(tmp_path, snapshot):
     db = tmp_path / 'db'
     snapshot['components']['builds'] = state.success({}, {}, state.utcnow())
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     before = rows(db)
     with closing(sqlite3.connect(db)) as conn, conn:
         conn.execute('UPDATE snapshot_clock SET build_checked_at=?', (state.utcnow(),))
     updated = state.read(db)
     updated['sources']['binutils']['version'] = 'next'
-    result = state.commit(db, updated)
+    result = state.commit(db, updated, previous=state.read_cached(db))
     assert result['changed_records'] == 1
     assert state.read(db) == updated
     assert all(value == rows(db)[key] for key, value in before.items() if key[0] == 'builds')
@@ -105,12 +105,12 @@ def test_monitor_write_does_not_materialize_unchanged_build_heartbeat(tmp_path, 
 def test_failed_build_does_not_inherit_shared_success_clock(tmp_path, snapshot):
     db = tmp_path / 'db'
     snapshot['components']['builds'] = state.success({}, {}, state.utcnow())
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     with closing(sqlite3.connect(db)) as conn, conn:
         conn.execute('UPDATE snapshot_clock SET build_checked_at=?', (state.utcnow(),))
     updated = state.read(db)
     updated['builds']['binutils']['rva23']['error'] = 'timeout'
-    state.commit(db, updated)
+    state.commit(db, updated, previous=state.read_cached(db))
     assert state.read(db) == updated
     with closing(sqlite3.connect(db)) as conn:
         assert conn.execute('SELECT build_checked_at FROM snapshot_clock').fetchone() == (None,)
@@ -118,7 +118,7 @@ def test_failed_build_does_not_inherit_shared_success_clock(tmp_path, snapshot):
 
 def test_unknown_storage_version_is_never_overwritten(tmp_path, snapshot):
     db = tmp_path / 'db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     with closing(sqlite3.connect(db)) as conn:
         conn.execute('PRAGMA user_version=999')
     before = db.read_bytes()
@@ -147,7 +147,7 @@ def test_migration_rolls_back_ddl_and_rows_on_failure(tmp_path, snapshot, monkey
 
 def test_incremental_commit_checks_all_payloads_but_writes_only_changed_record(tmp_path, snapshot, monkeypatch):
     db = tmp_path / 'db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     previous = state.read_cached(db)
     changed = deepcopy(previous[0])
     changed['sources']['binutils']['version'] = 'next'
@@ -164,12 +164,12 @@ def test_incremental_commit_checks_all_payloads_but_writes_only_changed_record(t
 @pytest.mark.parametrize('change', ['payload', 'heartbeat'])
 def test_stale_incremental_base_is_rejected_without_overwriting(tmp_path, snapshot, change):
     db = tmp_path / 'db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     previous = state.read_cached(db)
     if change == 'payload':
         newer = deepcopy(snapshot)
         newer['sources']['binutils']['version'] = 'newer'
-        state.commit(db, newer)
+        state.commit(db, newer, previous=state.read_cached(db))
     else:
         with closing(sqlite3.connect(db)) as conn, conn:
             conn.execute("UPDATE snapshot_clock SET build_checked_at='2026-01-01T00:00:00+00:00'")
@@ -186,11 +186,11 @@ def test_stale_incremental_base_is_rejected_without_overwriting(tmp_path, snapsh
 def test_non_json_values_are_rejected_before_database_write(tmp_path, value):
     db = tmp_path / 'db'
     original = state.empty()
-    state.commit(db, original)
+    state.commit(db, original, previous=state.read_cached(db))
     before = db.read_bytes()
     invalid = {**original, 'tracks': value}
     with pytest.raises(ValueError):
-        state.commit(db, invalid)
+        state.commit(db, invalid, previous=state.read_cached(db))
     assert db.read_bytes() == before
 
 
@@ -199,7 +199,7 @@ def test_non_json_values_are_rejected_before_database_write(tmp_path, value):
 ])
 def test_reader_rejects_inconsistent_record_shape(tmp_path, section, subject, slot):
     db = tmp_path / 'db'
-    state.commit(db, {**state.empty(), 'monitors': {'empty': {}}})
+    state.commit(db, {**state.empty(), 'monitors': {'empty': {}}}, previous=state.read_cached(db))
     with closing(sqlite3.connect(db)) as conn, conn:
         conn.execute('INSERT INTO snapshot_records VALUES (?, ?, ?, ?, ?, ?)',
                      (section, subject, slot, '{}', 'digest', 'revision'))
@@ -211,17 +211,36 @@ def test_string_enum_values_round_trip(tmp_path):
     from tracker.monitors.issues import Issue
     snapshot = {**state.empty(), 'tracks': {'widget': {'issue': Issue.YANKED}}}
     db = tmp_path / 'db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     assert state.read(db) == snapshot
 
 
 @pytest.mark.parametrize('shared', [False, True])
 def test_mutated_read_base_does_not_drop_updates(tmp_path, shared):
     db = tmp_path / 'db'
-    state.commit(db, {**state.empty(), 'tracks': {'widget': {'version': '1'}}})
+    state.commit(db, {**state.empty(), 'tracks': {'widget': {'version': '1'}}}, previous=state.read_cached(db))
     previous = state.read_cached(db)
     changed = dict(previous[0]) if shared else previous[0]
     changed['tracks']['widget']['version'] = '2'
     result = state.commit(db, changed, previous=previous)
     assert result['changed_records'] == 1
     assert state.read(db)['tracks']['widget']['version'] == '2'
+
+
+def test_existing_database_requires_an_explicit_base(tmp_path):
+    db = tmp_path / 'db'
+    original = state.empty()
+    state.commit(db, original)
+    before = db.read_bytes()
+    with pytest.raises(ValueError, match='changed since read'):
+        state.commit(db, {**original, 'generation': 1})
+    assert db.read_bytes() == before
+
+
+def test_two_initializers_cannot_replace_each_other(tmp_path):
+    db = tmp_path / 'db'
+    cold = state.read_cached(db)
+    state.commit(db, state.empty(), previous=cold)
+    with pytest.raises(ValueError, match='changed since read'):
+        state.commit(db, {**state.empty(), 'generation': 1}, previous=cold)
+    assert state.read(db)['generation'] == 0

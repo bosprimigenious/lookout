@@ -529,7 +529,7 @@ def collect_builds(config, db):
             patches = {name: facts for name, facts in observed['builds'].items()
                        if name in latest['inventory']}
             component = observed['components']['builds']
-            if state.commit_build_heartbeat(db, latest, patches, component):
+            if state.commit_build_heartbeat(db, latest, patches, component, revision=previous[1]):
                 snapshot = state.read(db)
             else:
                 snapshot = state.merge(latest, 'builds', {'builds': patches}, {'builds': component})

@@ -129,13 +129,13 @@ def test_collection_row_reuse_and_version_independence(config, snapshot, tmp_pat
     db = tmp_path / 'state.db'
     config['github'] = {'repositories': {REPO: {'source_root': 'SPECS'}}}
     monkeypatch.setattr('tracker.config.require_unchanged', lambda _: None)
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     initial = collect(config, db, client=Client([[raw()], [raw()]]), now=NOW)
     with closing(sqlite3.connect(db)) as conn, conn:
         revision = conn.execute("SELECT revision FROM snapshot_records WHERE section='github_items'").fetchone()[0]
     updated = deepcopy(initial)
     updated['sources']['foo3']['version'] = '99.0'
-    state.commit(db, updated)
+    state.commit(db, updated, previous=state.read_cached(db))
     result = collect(config, db, client=Client([None]), now='2026-01-01T12:05:00+00:00')
     assert result['github_items'] == initial['github_items']
     assert result['github_links'] == initial['github_links']
@@ -168,7 +168,7 @@ def test_keyset_pages_and_package_scope(snapshot):
 
 def test_v2_migration_preserves_observations(snapshot, tmp_path):
     db = tmp_path / 'old.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     with closing(sqlite3.connect(db)) as conn, conn:
         header = json.loads(conn.execute('SELECT payload FROM snapshot').fetchone()[0])
         header['storage'] = 2
@@ -196,7 +196,7 @@ def test_projection_and_api(snapshot, tmp_path, monkeypatch):
     populated(snapshot)
     monkeypatch.setattr(state, 'compare', lambda *_: 'current')
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     with ProjectedClient(create_app(db)) as client:
         result = client.get('/api/v2/packages/foo3').json()
         assert result['monitors']['github']['data']['labels'][0]['count'] == 45
@@ -294,7 +294,7 @@ def test_http_conditional_and_redirect(monkeypatch):
 def test_disable_collection_hides_links_without_erasing_history(config, snapshot, tmp_path, monkeypatch):
     populated(snapshot)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     monkeypatch.setattr('tracker.config.require_unchanged', lambda _: None)
     result = collect(config, db, client=Client([]), now=NOW)
     assert result['github_items'] == snapshot['github_items']
@@ -395,7 +395,7 @@ def test_scheduled_poll_does_not_issue_requests_early(config, snapshot, tmp_path
     db = tmp_path / 'state.db'
     config['github'] = {'repositories': {REPO: {}}}
     monkeypatch.setattr('tracker.config.require_unchanged', lambda _: None)
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     collect(config, db, client=Client([[], []]), now=NOW)
     client = Client([])
     collect(config, db, client=client, now='2026-01-01T12:09:59Z')
@@ -493,7 +493,7 @@ def test_no_budget_does_not_mark_unpolled_repositories_attempted(config, tmp_pat
     config['github'] = {'repositories': {'owner/a': {}, 'owner/b': {}}}
     monkeypatch.setattr('tracker.config.require_unchanged', lambda _: None)
     db = tmp_path / 'state.db'
-    state.commit(db, state.empty())
+    state.commit(db, state.empty(), previous=state.read_cached(db))
     collect(config, db, client=Limited(), now=NOW)
     assert 'github:owner/b' not in state.read(db)['components']
     client = Limited()
@@ -674,7 +674,7 @@ def test_auth_probe_preserves_public_schedule_until_recovery(config, snapshot, t
                   'retry_at': '2026-01-02T12:00:00+00:00', 'poll_delay': 7200}
     snapshot['components']['github:' + REPO] = checkpoint
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     calls = []
     def respond(request):
         calls.append(bool(request.headers.get('Authorization')))
@@ -714,12 +714,12 @@ def test_activity_conflict_exposes_restart_in_existing_ui_primitives(snapshot, t
     from tracker.api import create_app
     populated(snapshot)
     db = tmp_path / 'activity.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     with ProjectedClient(create_app(db)) as client:
         path = '/api/v2/packages/foo3/activity'
         first = client.get(path, params={'kind': 'issue'}).json()
         snapshot['github_items'][REPO]['1']['title'] = 'changed title'
-        state.commit(db, snapshot)
+        state.commit(db, snapshot, previous=state.read_cached(db))
         params = {'kind': 'issue', 'cursor': first['next_cursor']}
         assert client.get(path, params=params).status_code == 409
         response = client.get('/api/ui/packages/foo3/activity', params=params)

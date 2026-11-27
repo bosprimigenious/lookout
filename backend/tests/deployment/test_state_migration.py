@@ -38,7 +38,7 @@ def test_existing_backup_blocks_migration_before_data_change(tmp_path, snapshot)
 
 def test_newer_schema_is_not_automatically_rebuilt(tmp_path, snapshot):
     db, backup = tmp_path / 'db', tmp_path / 'backup'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     with closing(sqlite3.connect(db)) as conn:
         conn.execute('PRAGMA user_version=999')
     before = db.read_bytes()

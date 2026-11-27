@@ -130,7 +130,7 @@ def test_untracked_filter_is_not_attention(tmp_path, snapshot):
     snapshot['tracks']['binutils']['error'] = 'timeout'
     set_success(snapshot, 'binutils', '3.9.0', 'h-binutils')
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     response = client.get(query_url('/api/v2/packages', {'view': 'untracked'}))
     assert response.status_code == 200
@@ -155,7 +155,7 @@ def test_untracked_filter_is_not_attention(tmp_path, snapshot):
 
 def test_obs_network_does_not_hold_snapshot_lock_or_rewind_other_sources(config, snapshot, tmp_path, monkeypatch):
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     class ConcurrentOBS(HistoryOBS):
         changed = False
         def get(self, path):
@@ -167,7 +167,7 @@ def test_obs_network_does_not_hold_snapshot_lock_or_rewind_other_sources(config,
                     latest['specs']['binutils'] = {'head': 'concurrent-spec'}
                     latest['components']['spec_git'] = {'fetched_at': 'concurrent'}
                     latest['generation'] += 1
-                    state.commit(db, latest)
+                    state.commit(db, latest, previous=state.read_cached(db))
             return super().get(path)
         def close(self):
             pass

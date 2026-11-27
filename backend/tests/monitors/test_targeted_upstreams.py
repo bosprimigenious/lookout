@@ -141,7 +141,7 @@ def test_partial_merge_preserves_unselected_full_component_and_newer_obs(config,
     config['nv_digest'] = 'new-rule'
     config['native']['widget@3']['include_regex'] = '^3[.]'
     snapshot['components']['nvchecker'].update(error='nvchecker timeout', attempted_at='2026-01-01T00:00:00Z', extra={'kept': True})
-    db = tmp_path / 'snapshot.db'; state.commit(db, snapshot)
+    db = tmp_path / 'snapshot.db'; state.commit(db, snapshot, previous=state.read_cached(db))
     monkeypatch.setattr(cfg, 'require_unchanged', lambda *_args: None)
     def execute(c, previous, now, tracks=None, on_results=None):
         with state.writer_lock(db):
@@ -149,7 +149,7 @@ def test_partial_merge_preserves_unselected_full_component_and_newer_obs(config,
             latest['sources']['binutils']['version'] = '4.0'
             latest['specs']['binutils'] = {'head': 'new-spec-head'}
             latest['generation'] += 1
-            state.commit(db, latest)
+            state.commit(db, latest, previous=state.read_cached(db))
         return nv.import_events('{"name":"binutils","event":"updated","version":"4.1"}',
                                 {name: c['native'][name] for name in tracks}, previous, now)
     attempt = {}
@@ -173,7 +173,7 @@ def test_partial_merge_preserves_unselected_full_component_and_newer_obs(config,
 
 
 def test_partial_digest_change_before_commit_rejects_all_results(config, snapshot, tmp_path, configured_path):
-    db = tmp_path / 'snapshot.db'; state.commit(db, snapshot)
+    db = tmp_path / 'snapshot.db'; state.commit(db, snapshot, previous=state.read_cached(db))
     native = Path(config['nvpath'])
     native.write_text(native.read_text() + '\n# operator changed rule\n')
     with pytest.raises(ValueError, match='configuration changed'):
@@ -183,7 +183,7 @@ def test_partial_digest_change_before_commit_rejects_all_results(config, snapsho
 
 
 def test_partial_unrequested_result_rejected(config, snapshot, tmp_path):
-    db = tmp_path / 'snapshot.db'; state.commit(db, snapshot)
+    db = tmp_path / 'snapshot.db'; state.commit(db, snapshot, previous=state.read_cached(db))
     with pytest.raises(ValueError, match='do not match'):
         collector.check_upstreams(config, 'unused', db, tracks=['binutils'],
             run_nv=lambda _c, old, _now, tracks=None, on_results=None: (old, None))
@@ -191,7 +191,7 @@ def test_partial_unrequested_result_rejected(config, snapshot, tmp_path):
 
 
 def test_partial_respects_existing_upstream_lock(config, snapshot, tmp_path):
-    db = tmp_path / 'snapshot.db'; state.commit(db, snapshot)
+    db = tmp_path / 'snapshot.db'; state.commit(db, snapshot, previous=state.read_cached(db))
     with state.writer_lock(str(db) + '.upstreams'):
         with pytest.raises(BlockingIOError):
             collector.check_upstreams(config, 'unused', db, tracks=['binutils'],
@@ -257,7 +257,7 @@ def test_real_native_cli_two_selected_tracks_and_error_exit(config, snapshot, tm
         for name, fact in snapshot['tracks'].items():
             fact['configuration_fingerprint'] = cfg.track_fingerprint(config['native'][name])
         snapshot['components']['nvchecker']['error'] = 'old whole-batch timeout'
-        db = tmp_path / 'state.db'; state.commit(db, snapshot)
+        db = tmp_path / 'state.db'; state.commit(db, snapshot, previous=state.read_cached(db))
         command = [sys.executable,'-m','tracker.collector','--config',str(tracker),'--db',str(db),
                    '--only','upstreams','--track','binutils','--track','widget@3']
         env = {k:v for k,v in os.environ.items() if k not in ('TRACKER_CONFIG','TRACKER_DB','TRACKER_SPEC_REPO','HOST','PORT','API_PORT')}

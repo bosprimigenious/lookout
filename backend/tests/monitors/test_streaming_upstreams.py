@@ -191,7 +191,7 @@ def test_full_streaming_uses_an_ephemeral_native_config(config,tmp_path,monkeypa
 
 
 def test_partial_publication_retains_global_failure_and_newer_other_phases(config,snapshot,tmp_path,monkeypatch):
-    config['nv_digest']='same';db=tmp_path/'state.db';snapshot['components']['nvchecker']['error']='prior failure';state.commit(db,snapshot)
+    config['nv_digest']='same';db=tmp_path/'state.db';snapshot['components']['nvchecker']['error']='prior failure';state.commit(db,snapshot, previous=state.read_cached(db))
     monkeypatch.setattr(cfg,'require_unchanged',lambda *_args:None)
     def execute(config,previous,now,on_results=None,tracks=None):
         facts,_=nv.import_events('{"name":"binutils","event":"updated","version":"9.0"}',{'binutils':config['native']['binutils']},previous,now)
@@ -199,7 +199,7 @@ def test_partial_publication_retains_global_failure_and_newer_other_phases(confi
         visible=state.read(db)
         assert visible['tracks']['binutils']['version']=='9.0'
         assert visible['components']['nvchecker']==snapshot['components']['nvchecker']
-        visible['sources']['binutils']['version']='8.0';visible['generation']+=1;state.commit(db,visible)
+        visible['sources']['binutils']['version']='8.0';visible['generation']+=1;state.commit(db,visible, previous=state.read_cached(db))
         return {**previous,**facts},None
     result=collector.check_upstreams(config,'unused',db,run_nv=execute)
     assert result['sources']['binutils']['version']=='8.0'
@@ -207,7 +207,7 @@ def test_partial_publication_retains_global_failure_and_newer_other_phases(confi
 
 
 def test_config_drift_stops_publication_without_relabelling_completed_facts(config,snapshot,tmp_path,configured_path):
-    db=tmp_path/'state.db';state.commit(db,snapshot)
+    db=tmp_path/'state.db';state.commit(db,snapshot, previous=state.read_cached(db))
     def execute(config,previous,now,on_results=None,tracks=None):
         facts,_=nv.import_events('{"name":"binutils","event":"updated","version":"9.0"}',{'binutils':config['native']['binutils']},previous,now)
         on_results(facts)
@@ -263,7 +263,7 @@ def test_automatic_native_batch_finishes_new_rules_before_periodic_requests(conf
         snapshot['components']['nvchecker'].update(
             fetched_at=expired, options_fingerprint=cfg.track_fingerprint(config.get('native_options', {})))
         db = tmp_path / 'state.sqlite3'
-        state.commit(db, snapshot)
+        state.commit(db, snapshot, previous=state.read_cached(db))
         monkeypatch.setattr(cfg, 'require_unchanged', lambda *_: None)
         monkeypatch.setattr(state, 'utcnow', lambda: now.isoformat())
 

@@ -13,7 +13,7 @@ from tracker.readmodel import monitors as monitor_views, snapshot as view
 
 def test_uniform_results_preserve_source_facts_and_raw_evidence(snapshot, tmp_path):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     new = client.get('/api/v2/packages/foo3').json()
     modules = new['monitors']
@@ -65,7 +65,7 @@ def test_error_and_expiry_do_not_erase_build_result(snapshot):
 def test_pending_monitor_is_not_a_negative_finding(snapshot, tmp_path):
     snapshot['monitor_catalog'] = {'future': {'title': 'New observation'}}
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     result = ProjectedClient(create_app(db)).get('/api/v2/packages?monitor=future&section=coverage').json()
     assert result['check_statuses'] == {'pending': 5}
     assert result['total'] == 5
@@ -103,7 +103,7 @@ def test_monitor_focus_does_not_change_other_filter_dimensions(snapshot, tmp_pat
         'findings': [monitor_model.finding('example', 'Signal', 'Signal', [], 'https://example.org/')],
     }}}
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     api = ProjectedClient(create_app(db))
     original = api.get(query_url('/api/v2/packages', {'maintenance': 'Signal'})).json()
     for mid in ('source', 'version', 'build', 'external'):

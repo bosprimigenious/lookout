@@ -50,7 +50,7 @@ def repository(config, snapshot, tmp_path, monkeypatch):
     snapshot['sources']['LICENSES'] = {'error': 'no source version'}
     snapshot['inventory']['LICENSES'] = 'LICENSES'
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     monkeypatch.setattr(source_git, 'fetch', lambda *args, **kwargs: (True, None))
 
     def describe(data, macros=()):

@@ -79,7 +79,7 @@ def test_new_module_programs_its_schedule_without_a_runner_branch(config, snapsh
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda config, path: None)
     io = SimpleNamespace(for_hosts=lambda *args, **kwargs: None)
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     first = monitor.collect(config, 'unused', db, io=io)
     idle = monitor.collect(config, 'unused', db, io=io)
     assert idle['generation'] == first['generation']
@@ -89,7 +89,7 @@ def test_new_module_programs_its_schedule_without_a_runner_branch(config, snapsh
     for provider in calls:
         assert first['monitors']['binutils'][provider]['changed_at'] == second['monitors']['binutils'][provider]['changed_at']
     second['sources']['binutils'].update(version='3.9.1', srcmd5='new-source')
-    state.commit(db, second)
+    state.commit(db, second, previous=state.read_cached(db))
     third = monitor.collect(config, 'unused', db, io=io)
     assert calls == {'fast': 3, 'slow': 2}
     assert third['monitors']['binutils']['slow']['subject']['version'] == '3.9.1'
@@ -128,7 +128,7 @@ def test_bad_module_policy_is_local(config, snapshot, monkeypatch, tmp_path):
     config.update(monitors={'enabled': ['fixture']}, config_digest='test', nv_digest='test')
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda config, path: None)
     db = tmp_path / 'snapshot.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     result = monitor.collect(config, 'unused', db, io=SimpleNamespace(for_hosts=lambda *args, **kwargs: None))
     assert result['monitors']['binutils']['fixture']['status'] == 'error'
     assert set(calls) == {'foo3', 'foo4', 'untracked'}
@@ -190,7 +190,7 @@ def test_git_heartbeat_reuses_unchanged_head_and_invalidates_real_changes(config
                           fetch_timeout_seconds=30, interval_seconds=60)
     snapshot['sources'] = {'binutils': snapshot['sources']['binutils']}
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     # Only the remote boundary is substituted; HEAD, traversal and reads use real Git.
     monkeypatch.setattr(spec_git, 'fetch', lambda *args, **kwargs: (True, None))
     calls = []

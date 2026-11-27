@@ -21,7 +21,7 @@ def test_results_and_coverage_share_linked_filter_context(snapshot, tmp_path):
         'untracked': {'license': observed(snapshot, 'untracked', status='unsupported')},
     }
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     # Coverage is explicit; both HTTP representations default to results.
     assert client.get('/api/v2/packages?monitor=license&section=coverage').json()['total'] == 5
@@ -50,7 +50,7 @@ def test_focused_identifiers_are_complete_without_copying_provider_facts(snapsho
     snapshot['monitors'] = {'binutils': {'custom': observed(snapshot, 'binutils', findings)}}
     snapshot['monitor_catalog'] = {'custom': {'title': 'Custom'}}
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     overview = client.get('/api/v2/packages').json()['items'][0]['monitors']['custom']['data']
     assert overview['entries'] == [] and overview['labels'][0]['count'] == 5

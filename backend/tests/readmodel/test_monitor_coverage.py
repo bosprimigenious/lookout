@@ -29,7 +29,7 @@ def observed(snapshot, name, status, findings=()):
 
 def client_for(snapshot, tmp_path):
     db = tmp_path / 'coverage.sqlite3'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     return ProjectedClient(create_app(db))
 
 

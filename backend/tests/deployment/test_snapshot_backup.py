@@ -19,7 +19,7 @@ spec.loader.exec_module(backup)
 @pytest.fixture
 def source(tmp_path):
     path = tmp_path / 'source #?.sqlite3'
-    state.commit(path, {**state.empty(), 'generation': 8})
+    state.commit(path, {**state.empty(), 'generation': 8}, previous=state.read_cached(path))
     return path
 
 
@@ -58,7 +58,7 @@ def test_invalid_source_leaves_no_backup(tmp_path, kind, capsys):
     if kind == 'corrupt':
         source.write_bytes(b'broken')
     elif kind in payloads:
-        state.commit(source, {**state.empty(), 'generation': 8})
+        state.commit(source, {**state.empty(), 'generation': 8}, previous=state.read_cached(source))
         with closing(sqlite3.connect(source)) as db, db:
             db.execute('UPDATE snapshot SET payload=? WHERE id=1', (payloads[kind],))
     elif kind != 'missing':
@@ -110,7 +110,7 @@ def test_backup_preserves_clock_adjusted_observations(source, tmp_path):
     snapshot = {**state.empty(), 'generation': 8,
                 'builds': {'widget': {'target': state.success({}, {'raw_status': 'failed'}, old)}},
                 'components': {'builds': state.success({}, {}, old)}}
-    state.commit(source, snapshot)
+    state.commit(source, snapshot, previous=state.read_cached(source))
     with closing(sqlite3.connect(source)) as db, db:
         db.execute('UPDATE snapshot_clock SET build_checked_at=?', (new,))
     before = source.read_bytes()
@@ -173,7 +173,7 @@ def test_concurrent_output_is_not_overwritten(source, tmp_path, monkeypatch):
 def test_concurrent_writer_produces_one_complete_snapshot(source, tmp_path, monkeypatch):
     first = {**state.empty(), 'generation': 1, 'marker': 'a' * 2_000_000}
     second = {**state.empty(), 'generation': 2, 'marker': 'b' * 2_000_000}
-    state.commit(source, first)
+    state.commit(source, first, previous=state.read_cached(source))
     started = threading.Event()
     writer_ready = threading.Event()
     errors = []
@@ -193,7 +193,7 @@ def test_concurrent_writer_produces_one_complete_snapshot(source, tmp_path, monk
         try:
             assert started.wait(5)
             writer_ready.set()
-            state.commit(source, second)
+            state.commit(source, second, previous=state.read_cached(source))
         except Exception as error:
             errors.append(error)
 

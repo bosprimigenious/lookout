@@ -113,7 +113,7 @@ def test_batch_publication_retains_jobs_not_selected(config, snapshot, observed,
     snapshot['inventory']['aaa'] = 'aaa'
     adapter.VERSION += 1
     db = tmp_path / 'db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     runner.collect(config, configured_path, db, io=FixtureIO({}))
     saved = state.read(db)['monitors']['binutils']['fixture']
     assert saved['status'] == 'pending' and saved['last_result'] == result

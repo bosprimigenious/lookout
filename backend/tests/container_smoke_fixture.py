@@ -49,7 +49,7 @@ def prepare(mode, config_dir=Path('/config'), data_dir=Path('/data')):
                 conn.execute('CREATE TABLE snapshot_clock (id INTEGER PRIMARY KEY, revision TEXT, build_checked_at TEXT)')
                 conn.execute("INSERT INTO snapshot_clock VALUES (1, 'fixture', NULL)")
         else:
-            state.commit(db, snap)
+            state.commit(db, snap, previous=state.read_cached(db))
         if mode == 'hot-journal':
             leave_hot_journal(data_dir / 'state/tracker.sqlite3')
     for root in (config_dir, data_dir):

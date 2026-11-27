@@ -34,7 +34,7 @@ def test_new_monitors_share_coverage_counts_with_their_filters():
 def test_indexed_coverage_and_status_preserve_the_published_response(snapshot, tmp_path, monkeypatch):
     db = tmp_path / 'status.db'
     snapshot['tracks']['binutils'].update(error='fixture timeout', source={'source': 'git', 'git': 'https://forge.example/repo'})
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     app = api.create_app(db)
     cache = app.state.projection
     cache.refresh()
@@ -66,7 +66,7 @@ def test_indexed_coverage_and_status_preserve_the_published_response(snapshot, t
 
 def test_status_and_facets_switch_to_the_same_new_generation(snapshot, tmp_path):
     db = tmp_path / 'status.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     app = api.create_app(db)
     cache = app.state.projection
     cache.refresh()
@@ -76,7 +76,7 @@ def test_status_and_facets_switch_to_the_same_new_generation(snapshot, tmp_path)
     changed = deepcopy(snapshot)
     changed['tracks']['binutils']['error'] = 'fixture timeout'
     changed['generation'] += 1
-    state.commit(db, changed)
+    state.commit(db, changed, previous=state.read_cached(db))
     # Committing storage alone cannot publish a half-updated read model.
     assert client.get('/api/v2/status').json() == old
     cache.refresh()
@@ -93,7 +93,7 @@ def test_initial_component_snapshot_serves_empty_data_without_claiming_ready(tmp
     db = tmp_path / 'initial.db'
     snapshot = state.empty()
     snapshot['generation'] = 1
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     app = api.create_app(db)
     app.state.projection.refresh()
     client = TestClient(app)

@@ -7,7 +7,7 @@ from tracker import state
 from tracker.api import create_app
 
 def client(tmp_path,snapshot):
-    db=tmp_path/'test.sqlite3';state.commit(db,snapshot)
+    db=tmp_path/'test.sqlite3';state.commit(db,snapshot, previous=state.read_cached(db))
     return ProjectedClient(create_app(db)),db
 
 def test_list_filters_counts_pagination(tmp_path,snapshot):
@@ -62,7 +62,7 @@ def test_no_snapshot_is_not_empty_success(tmp_path):
 def test_snapshot_reload_same_generation(tmp_path,snapshot):
     c,db=client(tmp_path,snapshot)
     assert c.get('/api/v2/packages').json()['total']==5
-    snapshot['sources'].pop('untracked');state.commit(db,snapshot)
+    snapshot['sources'].pop('untracked');state.commit(db,snapshot, previous=state.read_cached(db))
     assert c.get('/api/v2/packages').json()['total']==4
 
 

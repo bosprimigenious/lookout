@@ -13,7 +13,7 @@ from tracker.monitors.build import obs
 
 def test_fast_poll_is_visible_while_metadata_is_blocked(config, snapshot, tmp_path, monkeypatch):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     waiting, release = threading.Event(), threading.Event()
     requests = []
 
@@ -52,7 +52,7 @@ def test_fast_poll_is_visible_while_metadata_is_blocked(config, snapshot, tmp_pa
 
 def test_fast_poll_preserves_concurrent_success_history(config, snapshot, tmp_path, monkeypatch):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     success = {'version': '3.9.0', 'time': state.utcnow(), 'srcmd5': 'h-binutils'}
     class Client(FakeOBS):
         def __init__(self, config, **kwargs):
@@ -61,7 +61,7 @@ def test_fast_poll_preserves_concurrent_success_history(config, snapshot, tmp_pa
             with state.writer_lock(db):
                 latest = state.read(db)
                 latest['builds']['binutils']['rva23']['last_success'] = success
-                state.commit(db, latest)
+                state.commit(db, latest, previous=state.read_cached(db))
             return super().get(path)
         def close(self):
             pass
@@ -126,7 +126,7 @@ def test_repointed_target_cannot_retain_old_build_status(snapshot):
 
 def test_removed_inventory_is_not_reintroduced_by_fast_poll(config, snapshot, tmp_path, monkeypatch):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     class Client(FakeOBS):
         def __init__(self, config, **kwargs):
             super().__init__(config)
@@ -134,7 +134,7 @@ def test_removed_inventory_is_not_reintroduced_by_fast_poll(config, snapshot, tm
             latest = state.read(db)
             latest['inventory'].pop('binutils')
             latest['builds'].pop('binutils')
-            state.commit(db, latest)
+            state.commit(db, latest, previous=state.read_cached(db))
             return super().get(path)
         def close(self):
             pass
@@ -145,14 +145,14 @@ def test_removed_inventory_is_not_reintroduced_by_fast_poll(config, snapshot, tm
 
 def test_inflight_status_for_repointed_target_is_discarded(config, snapshot, tmp_path, monkeypatch):
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     class Client(FakeOBS):
         def __init__(self, config, **kwargs):
             super().__init__(config)
         def get(self, path):
             latest = state.read(db)
             latest['targets'][0]['repository'] = 'another-repository'
-            state.commit(db, latest)
+            state.commit(db, latest, previous=state.read_cached(db))
             return super().get(path)
         def close(self):
             pass

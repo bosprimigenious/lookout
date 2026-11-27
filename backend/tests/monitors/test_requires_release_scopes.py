@@ -197,7 +197,7 @@ def test_target_changes_during_publication_preserve_completed_current(config, sn
     backend, calls = release_setup
     monkeypatch.setattr(monitor.cfg, 'require_unchanged', lambda *args: None)
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
 
     def read(version, settings, io):
         calls.append(version)
@@ -206,7 +206,7 @@ def test_target_changes_during_publication_preserve_completed_current(config, sn
                 latest = state.read(db)
                 tracks = deepcopy(latest['tracks'])
                 tracks['binutils']['version'] = '3.12.0'
-                state.commit(db, state.merge(latest, 'upstreams', {'tracks': tracks}))
+                state.commit(db, state.merge(latest, 'upstreams', {'tracks': tracks}), previous=state.read_cached(db))
         return [declaration(version)]
 
     backend.read = read
@@ -225,13 +225,13 @@ def test_dependency_only_change_reprojects_unmet_and_preserves_upstream_facts(co
     save_observation(snapshot, observed)
     original = deepcopy(snapshot['monitors'])
     db = tmp_path / 'state.db'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     client = ProjectedClient(create_app(db))
     route = query_url('/api/v2/packages', {'requires': 'unmet'}, monitor='requires')
     first = client.get(route)
     assert first.status_code == 200 and first.json()['total'] == 0
     snapshot['sources']['runtime-package']['version'] = '3.7'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     second = client.get(route)
     assert second.status_code == 200 and second.json()['total'] == 1
     assert second.json()['requires_counts']['unmet'] == 1

@@ -89,7 +89,7 @@ def test_version_and_archive_changes_invalidate_saved_query(config, snapshot, tm
     assert before['status'] == 'pending'
     snapshot['monitors'] = {'binutils': {'requires': before}}
     db = tmp_path / 'state.sqlite3'
-    state.commit(db, snapshot)
+    state.commit(db, snapshot, previous=state.read_cached(db))
     assert state.read(db)['monitors']['binutils']['requires']['inputs'] == before['inputs']
     source['native_query']['spec_sha256'] = 'b' * 64
     assert runner.plan(config, snapshot, 'binutils', 'requires')['fingerprint'] == before['fingerprint']

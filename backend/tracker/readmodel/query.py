@@ -1,7 +1,9 @@
 """Facet selections: union within each facet, intersection between facets."""
 from urllib.parse import urlencode
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from tracker.identity import FACET_NAME_LIMIT, facet_name
 
 # Bounds URL parsing and set operations, including repeated raw values.
 MAX_QUERY_NODES = 128
@@ -9,8 +11,13 @@ MAX_QUERY_NODES = 128
 
 class Condition(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True)
-    dimension: str = Field(min_length=1, max_length=100)
+    dimension: str = Field(min_length=1, max_length=FACET_NAME_LIMIT)
     value: str = Field(min_length=1, max_length=100)
+
+    @field_validator('dimension')
+    @classmethod
+    def valid_dimension(cls, value):
+        return facet_name(value)
 
     @property
     def identity(self):

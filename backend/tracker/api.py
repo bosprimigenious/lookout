@@ -1,4 +1,5 @@
 """Read-only REST. HTTP processes never import or invoke the collector."""
+import json
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -6,8 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, get_origin
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from tracker import state
@@ -626,10 +628,31 @@ def create_app(db=None):
         except ValueError:
             raise HTTPException(503, 'No prepared snapshot yet') from None
     @app.get('/api/v2/export', response_model=MonitorExport)
-    def export(response: Response):
+    def export():
         snap, index, collection = data()
-        response.headers['Content-Disposition'] = 'attachment; filename="openruyi-packages.json"'
-        return {'schema': 2, 'collection': collection, 'targets': snap.get('targets', []), 'packages': index.rows}
+        header = MonitorExport.model_validate({'schema': 2, 'collection': collection,
+                                               'targets': snap.get('targets', []), 'packages': []})
+        prefix = json.dumps(header.model_dump(mode='json', by_alias=True, exclude={'packages'}),
+                            separators=(',', ':'))[:-1] + ',"packages":['
+
+        def chunks():
+            yield prefix.encode()
+            buffer = bytearray()
+            for number, row in enumerate(index.rows):
+                encoded = MonitoredObservation.model_validate(row).model_dump_json().encode()
+                if number:
+                    buffer.extend(b',')
+                buffer.extend(encoded)
+                if len(buffer) >= 64 * 1024:
+                    yield bytes(buffer)
+                    buffer.clear()
+            buffer.extend(b']}')
+            yield bytes(buffer)
+
+        # Hold one prepared index throughout the stream. A failed serialization
+        # terminates the download; it must never become a valid partial export.
+        return StreamingResponse(chunks(), media_type='application/json', headers={
+            'Content-Disposition': 'attachment; filename="openruyi-packages.json"'})
     @app.middleware('http')
     async def headers(request, call_next):
         response = await call_next(request)

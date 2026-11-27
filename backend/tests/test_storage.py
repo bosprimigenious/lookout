@@ -177,3 +177,39 @@ def test_stale_incremental_base_is_rejected_without_overwriting(tmp_path, snapsh
     with pytest.raises(ValueError, match='changed since read'):
         state.commit(db, snapshot, previous=previous)
     assert db.read_bytes() == before
+
+
+@pytest.mark.parametrize('value', [
+    {1: 'integer', '1': 'string'}, {'nested': {1: 'value'}},
+    {'tuple': (1, 2)}, {'nan': float('nan')}, {'infinite': float('inf')},
+])
+def test_non_json_values_are_rejected_before_database_write(tmp_path, value):
+    db = tmp_path / 'db'
+    original = state.empty()
+    state.commit(db, original)
+    before = db.read_bytes()
+    invalid = {**original, 'tracks': value}
+    with pytest.raises(ValueError):
+        state.commit(db, invalid)
+    assert db.read_bytes() == before
+
+
+@pytest.mark.parametrize('section,subject,slot', [
+    ('tracks', 'widget', 'unexpected'), ('monitors', 'empty', 'security'),
+])
+def test_reader_rejects_inconsistent_record_shape(tmp_path, section, subject, slot):
+    db = tmp_path / 'db'
+    state.commit(db, {**state.empty(), 'monitors': {'empty': {}}})
+    with closing(sqlite3.connect(db)) as conn, conn:
+        conn.execute('INSERT INTO snapshot_records VALUES (?, ?, ?, ?, ?, ?)',
+                     (section, subject, slot, '{}', 'digest', 'revision'))
+    with pytest.raises(ValueError, match='collection shape'):
+        state.read(db)
+
+
+def test_string_enum_values_round_trip(tmp_path):
+    from tracker.monitors.issues import Issue
+    snapshot = {**state.empty(), 'tracks': {'widget': {'issue': Issue.YANKED}}}
+    db = tmp_path / 'db'
+    state.commit(db, snapshot)
+    assert state.read(db) == snapshot

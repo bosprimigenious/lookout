@@ -126,7 +126,7 @@ def test_source_secrets_omitted():
 def test_atomic_bad_snapshot(tmp_path,snapshot):
     db=tmp_path/'db';state.commit(db,snapshot)
     bad=deepcopy(snapshot);bad['bad']=object()
-    with pytest.raises(TypeError):state.commit(db,bad)
+    with pytest.raises(ValueError, match="non-JSON"):state.commit(db,bad)
     assert state.read(db)==snapshot
     with sqlite3.connect(db) as conn:assert conn.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
 

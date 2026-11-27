@@ -1,6 +1,7 @@
 """SQLite row storage; public snapshots are assembled views, not database blobs."""
 import hashlib
 import json
+import math
 import sqlite3
 import uuid
 from contextlib import closing
@@ -36,8 +37,28 @@ def validate(snapshot) -> Snapshot:
     return snapshot
 
 
+def validate_json(value):
+    """Reject lossy JSON values and ambiguous object keys."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError('snapshot object keys must be strings')
+            validate_json(item)
+    elif isinstance(value, list):
+        for item in value:
+            validate_json(item)
+    elif value is not None and not isinstance(value, (str, bool, int, float)):
+        raise ValueError('snapshot contains a non-JSON value')
+    elif isinstance(value, float) and not math.isfinite(value):
+        raise ValueError('snapshot contains a non-finite number')
+
+
 def pack(snapshot, previous=None):
     validate(snapshot)
+    try:
+        validate_json(snapshot)
+    except RecursionError:
+        raise ValueError('snapshot is cyclic or too deeply nested') from None
     metadata = {key: value for key, value in snapshot.items() if key not in DEPTH}
     sections, records = {}, {}
     for section, depth in DEPTH.items():
@@ -203,11 +224,16 @@ def read(db, previous: tuple[Snapshot, Revision | None] | None = None) -> tuple[
     if not isinstance(sections, dict) or set(sections) - DEPTH.keys():
         raise ValueError('snapshot collections are invalid')
     for section, empty in sections.items():
+        if (not isinstance(empty, list) or any(not isinstance(name, str) for name in empty)
+                or len(empty) != len(set(empty)) or (DEPTH[section] == 1 and empty)):
+            raise ValueError('snapshot empty subjects are invalid')
         snapshot[section] = {name: {} for name in empty}
     for key in revisions:
         section, subject, slot = key
         if section not in sections:
             raise ValueError('observation has no collection')
+        if (DEPTH[section] == 1 and slot != '') or subject in sections[section]:
+            raise ValueError('observation conflicts with collection shape')
         if key in payloads:
             value = json.loads(payloads[key])
         else:
